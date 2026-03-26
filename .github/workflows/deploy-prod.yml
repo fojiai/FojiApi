@@ -1,0 +1,69 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'deploy' to confirm production deployment"
+        required: true
+        default: ""
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: foji-api-prod
+  APP_RUNNER_SERVICE: foji-api-prod
+
+jobs:
+  deploy:
+    name: Build & Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Validate confirmation
+        if: ${{ github.event.inputs.confirm != 'deploy' }}
+        run: |
+          echo "Deployment cancelled: confirmation input was not 'deploy'."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Run EF Core migrations
+        env:
+          CONNECTION_STRING: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          dotnet tool install --global dotnet-ef
+          dotnet ef database update \
+            --project src/FojiApi.Infrastructure/FojiApi.Infrastructure.csproj \
+            --startup-project src/FojiApi.Web.API/FojiApi.Web.API.csproj \
+            --connection "$CONNECTION_STRING"
+
+      - name: Deploy to App Runner
+        run: |
+          aws apprunner update-service \
+            --service-arn ${{ secrets.PROD_APP_RUNNER_SERVICE_ARN }} \
+            --source-configuration "{\"ImageRepository\":{\"ImageIdentifier\":\"${{ steps.build-image.outputs.image }}\",\"ImageRepositoryType\":\"ECR\"}}"

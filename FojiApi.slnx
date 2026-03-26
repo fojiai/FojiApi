@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FojiApi.Core/FojiApi.Core.csproj" />
+    <Project Path="src/FojiApi.Infrastructure/FojiApi.Infrastructure.csproj" />
+    <Project Path="src/FojiApi.Web.API/FojiApi.Web.API.csproj" />
+  </Folder>
+</Solution>
