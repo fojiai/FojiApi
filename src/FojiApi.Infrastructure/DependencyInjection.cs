@@ -5,6 +5,7 @@ using FojiApi.Infrastructure.Data;
 using FojiApi.Infrastructure.HostedServices;
 using FojiApi.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Resend;
@@ -17,7 +18,8 @@ public static class DependencyInjection
     {
         // Database
         services.AddDbContext<FojiDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
+                   .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
 
         // AWS
         services.AddDefaultAWSOptions(configuration.GetAWSOptions());
