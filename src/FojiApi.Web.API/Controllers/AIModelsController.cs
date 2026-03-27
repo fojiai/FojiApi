@@ -26,5 +26,42 @@ public class AIModelsController(IAIModelService aiModelService, ICurrentUserServ
     }
 }
 
-public record CreateAIModelRequest(string Name, string DisplayName, string Provider, string ModelId, decimal InputCostPer1M, decimal OutputCostPer1M, bool IsActive = true, bool IsDefault = false);
-public record UpdateAIModelRequest(string? DisplayName, bool? IsActive, bool? IsDefault, decimal? InputCostPer1M, decimal? OutputCostPer1M);
+public record CreateAIModelRequest(
+    [property: System.ComponentModel.DataAnnotations.Required]
+    [property: System.ComponentModel.DataAnnotations.StringLength(100)]
+    string Name,
+
+    [property: System.ComponentModel.DataAnnotations.Required]
+    [property: System.ComponentModel.DataAnnotations.StringLength(100)]
+    string DisplayName,
+
+    [property: System.ComponentModel.DataAnnotations.Required]
+    [property: System.ComponentModel.DataAnnotations.StringLength(50)]
+    string Provider,
+
+    [property: System.ComponentModel.DataAnnotations.Required]
+    [property: System.ComponentModel.DataAnnotations.StringLength(100)]
+    string ModelId,
+
+    [property: System.ComponentModel.DataAnnotations.Range(0, 10000)]
+    decimal InputCostPer1M,
+
+    [property: System.ComponentModel.DataAnnotations.Range(0, 10000)]
+    decimal OutputCostPer1M,
+
+    bool IsActive = true,
+    bool IsDefault = false
+);
+
+public record UpdateAIModelRequest(
+    [property: System.ComponentModel.DataAnnotations.StringLength(100)]
+    string? DisplayName,
+    bool? IsActive,
+    bool? IsDefault,
+
+    [property: System.ComponentModel.DataAnnotations.Range(0, 10000)]
+    decimal? InputCostPer1M,
+
+    [property: System.ComponentModel.DataAnnotations.Range(0, 10000)]
+    decimal? OutputCostPer1M
+);

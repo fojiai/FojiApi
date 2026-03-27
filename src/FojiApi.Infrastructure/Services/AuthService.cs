@@ -1,6 +1,7 @@
 using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
 using FojiApi.Core.Entities;
+using FojiApi.Core.Validation;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,6 +11,8 @@ public class AuthService(FojiDbContext db, IJwtService jwtService, IEmailService
 {
     public async Task SignupAsync(string email, string password, string firstName, string lastName)
     {
+        PasswordValidator.Validate(password);
+
         if (await db.Users.AnyAsync(u => u.Email == email.ToLower()))
             throw new ConflictException("An account with this email already exists.");
 
@@ -89,6 +92,8 @@ public class AuthService(FojiDbContext db, IJwtService jwtService, IEmailService
 
     public async Task ResetPasswordAsync(string token, string newPassword)
     {
+        PasswordValidator.Validate(newPassword);
+
         var user = await db.Users.FirstOrDefaultAsync(u =>
             u.PasswordResetToken == token &&
             u.PasswordResetTokenExpiresAt > DateTime.UtcNow);

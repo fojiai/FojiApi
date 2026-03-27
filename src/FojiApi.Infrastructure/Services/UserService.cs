@@ -1,5 +1,6 @@
 using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
+using FojiApi.Core.Validation;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -31,6 +32,8 @@ public class UserService(FojiDbContext db) : IUserService
 
     public async Task ChangePasswordAsync(int userId, string currentPassword, string newPassword)
     {
+        PasswordValidator.Validate(newPassword);
+
         var user = await db.Users.FindAsync(userId)
             ?? throw new NotFoundException("User not found.");
 

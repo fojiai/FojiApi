@@ -11,9 +11,9 @@ public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailServ
 {
     public async Task<CreateCompanyResult> CreateCompanyAsync(int userId, string name, string? slug, string? description)
     {
-        var resolvedSlug = (slug?.ToLower().Trim() ?? name.ToLower().Trim())
-            .Replace(" ", "-")
-            .Replace("_", "-");
+        var resolvedSlug = System.Text.RegularExpressions.Regex
+            .Replace((slug?.ToLower().Trim() ?? name.ToLower().Trim()), @"[^a-z0-9\-]", "-")
+            .Trim('-');
 
         if (await db.Companies.AnyAsync(c => c.Slug == resolvedSlug))
             throw new ConflictException("A company with this slug already exists. Please choose a different one.");

@@ -85,6 +85,33 @@ public class CompaniesController(
     }
 }
 
-public record CreateCompanyRequest(string Name, string? Slug, string? Description);
-public record UpdateCompanyRequest(string? Name, string? Description);
-public record InviteMemberRequest(string Email, string Role);
+public record CreateCompanyRequest(
+    [property: System.ComponentModel.DataAnnotations.Required]
+    [property: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
+    string Name,
+
+    [property: System.ComponentModel.DataAnnotations.StringLength(50)]
+    [property: System.ComponentModel.DataAnnotations.RegularExpression(@"^[a-z0-9\-]+$", ErrorMessage = "Slug must be lowercase letters, numbers, and hyphens only.")]
+    string? Slug,
+
+    [property: System.ComponentModel.DataAnnotations.StringLength(500)]
+    string? Description
+);
+
+public record UpdateCompanyRequest(
+    [property: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
+    string? Name,
+
+    [property: System.ComponentModel.DataAnnotations.StringLength(500)]
+    string? Description
+);
+
+public record InviteMemberRequest(
+    [property: System.ComponentModel.DataAnnotations.Required]
+    [property: System.ComponentModel.DataAnnotations.EmailAddress]
+    string Email,
+
+    [property: System.ComponentModel.DataAnnotations.Required]
+    [property: System.ComponentModel.DataAnnotations.RegularExpression(@"^(admin|user)$", ErrorMessage = "Role must be 'admin' or 'user'.")]
+    string Role
+);

@@ -71,5 +71,57 @@ public class AgentsController(IAgentService agentService, ICurrentUserService cu
     }
 }
 
-public record CreateAgentRequest(int CompanyId, string Name, string? Description, string IndustryType, string? AgentLanguage, string? UserPrompt);
-public record UpdateAgentRequest(string? Name, string? Description, string? UserPrompt, bool? IsActive, string? AgentLanguage, bool? WhatsAppEnabled, string? WhatsAppPhoneNumberId, string? SupportWhatsAppNumber, string? SalesWhatsAppNumber, string? SupportEmail, string? SalesEmail);
+public record CreateAgentRequest(
+    [property: System.ComponentModel.DataAnnotations.Required]
+    int CompanyId,
+
+    [property: System.ComponentModel.DataAnnotations.Required]
+    [property: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
+    string Name,
+
+    [property: System.ComponentModel.DataAnnotations.StringLength(500)]
+    string? Description,
+
+    [property: System.ComponentModel.DataAnnotations.Required]
+    [property: System.ComponentModel.DataAnnotations.StringLength(50)]
+    string IndustryType,
+
+    [property: System.ComponentModel.DataAnnotations.StringLength(10)]
+    string? AgentLanguage,
+
+    [property: System.ComponentModel.DataAnnotations.StringLength(10000)]
+    string? UserPrompt
+);
+
+public record UpdateAgentRequest(
+    [property: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
+    string? Name,
+
+    [property: System.ComponentModel.DataAnnotations.StringLength(500)]
+    string? Description,
+
+    [property: System.ComponentModel.DataAnnotations.StringLength(10000)]
+    string? UserPrompt,
+    bool? IsActive,
+
+    [property: System.ComponentModel.DataAnnotations.StringLength(10)]
+    string? AgentLanguage,
+    bool? WhatsAppEnabled,
+
+    [property: System.ComponentModel.DataAnnotations.StringLength(50)]
+    string? WhatsAppPhoneNumberId,
+
+    [property: System.ComponentModel.DataAnnotations.StringLength(20)]
+    string? SupportWhatsAppNumber,
+
+    [property: System.ComponentModel.DataAnnotations.StringLength(20)]
+    string? SalesWhatsAppNumber,
+
+    [property: System.ComponentModel.DataAnnotations.EmailAddress]
+    [property: System.ComponentModel.DataAnnotations.StringLength(254)]
+    string? SupportEmail,
+
+    [property: System.ComponentModel.DataAnnotations.EmailAddress]
+    [property: System.ComponentModel.DataAnnotations.StringLength(254)]
+    string? SalesEmail
+);

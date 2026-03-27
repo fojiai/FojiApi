@@ -171,7 +171,31 @@ public class AdminController(
 
 // ── Request records ───────────────────────────────────────────────────────────
 
-public record InviteAdminRequest(string Email);
-public record AcceptAdminInviteRequest(string Token, string FirstName, string LastName, string Password);
-public record UpdateNotesRequest(string? Notes);
+public record InviteAdminRequest(
+    [property: System.ComponentModel.DataAnnotations.Required]
+    [property: System.ComponentModel.DataAnnotations.EmailAddress]
+    string Email
+);
+
+public record AcceptAdminInviteRequest(
+    [property: System.ComponentModel.DataAnnotations.Required]
+    string Token,
+
+    [property: System.ComponentModel.DataAnnotations.Required]
+    [property: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
+    string FirstName,
+
+    [property: System.ComponentModel.DataAnnotations.Required]
+    [property: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
+    string LastName,
+
+    [property: System.ComponentModel.DataAnnotations.Required]
+    [property: System.ComponentModel.DataAnnotations.StringLength(128, MinimumLength = 8)]
+    string Password
+);
+
+public record UpdateNotesRequest(
+    [property: System.ComponentModel.DataAnnotations.StringLength(2000)]
+    string? Notes
+);
 

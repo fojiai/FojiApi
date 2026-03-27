@@ -1,5 +1,6 @@
 using FojiApi.Core.Entities;
 using FojiApi.Core.Interfaces.Services;
+using FojiApi.Core.Validation;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -66,6 +67,8 @@ public class SystemAdminInvitationService(
 
     public async Task AcceptAsync(string token, string firstName, string lastName, string password)
     {
+        PasswordValidator.Validate(password);
+
         var invitation = await db.SystemAdminInvitations
             .FirstOrDefaultAsync(i => i.Token == token)
             ?? throw new KeyNotFoundException("Invitation not found.");
