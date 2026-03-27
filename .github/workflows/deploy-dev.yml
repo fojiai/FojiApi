@@ -6,7 +6,7 @@ on:
       - main
 
 env:
-  AWS_REGION: us-east-2
+  AWS_REGION: us-east-1
   ECR_REPOSITORY: foji-api-dev
   APP_RUNNER_SERVICE: foji-api-dev
 
@@ -58,7 +58,7 @@ jobs:
             "RuntimeEnvironmentVariables": {
               "ASPNETCORE_ENVIRONMENT": "Production",
               "AWS_SSM_PREFIX": "/foji/dev/",
-              "AWS_REGION": "us-east-2"
+              "AWS_REGION": "us-east-1"
             },
             "Port": "8080"
           }'

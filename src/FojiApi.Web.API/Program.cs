@@ -13,7 +13,7 @@ var builder = WebApplication.CreateBuilder(args);
 var ssmPrefix = Environment.GetEnvironmentVariable("AWS_SSM_PREFIX");
 if (!string.IsNullOrEmpty(ssmPrefix))
 {
-    var ssmRegion = Environment.GetEnvironmentVariable("AWS_REGION") ?? "us-east-2";
+    var ssmRegion = Environment.GetEnvironmentVariable("AWS_REGION") ?? "us-east-1";
     builder.Configuration.AddSystemsManager(configSource =>
     {
         configSource.Path = ssmPrefix;
