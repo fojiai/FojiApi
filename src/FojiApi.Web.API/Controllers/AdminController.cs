@@ -175,18 +175,3 @@ public record InviteAdminRequest(string Email);
 public record AcceptAdminInviteRequest(string Token, string FirstName, string LastName, string Password);
 public record UpdateNotesRequest(string? Notes);
 
-// Re-expose service records as API surface (thin mapping — same shape)
-public record CreateAdminCompanyRequest(
-    string Name,
-    string? TradeName,
-    string Slug,
-    AccountType AccountType,
-    string? CpfCnpj,
-    string? Description,
-    string? AdminNotes,
-    string OwnerEmail,
-    string? OwnerFirstName,
-    string? OwnerLastName
-);
-
-public record AssignPlanRequest(int PlanId, string? AdminNotes, DateTime? PeriodEnd);
