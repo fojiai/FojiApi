@@ -25,11 +25,14 @@ public static class DependencyInjection
         services.AddAWSService<IAmazonSQS>();
 
         // Resend (transactional email)
-        services.AddResend(options =>
+        services.AddOptions();
+        services.AddHttpClient<ResendClient>();
+        services.Configure<ResendClientOptions>(options =>
         {
             options.ApiToken = configuration["Resend:ApiKey"]
                 ?? throw new InvalidOperationException("Resend:ApiKey not configured");
         });
+        services.AddTransient<IResend, ResendClient>();
 
         // Infrastructure services
         services.AddScoped<IJwtService, JwtService>();
