@@ -9,8 +9,8 @@ on:
         default: ""
 
 env:
-  AWS_REGION: us-east-1
-  ECR_REPOSITORY: foji-api-prod
+  AWS_REGION: us-east-2
+  ECR_REPOSITORY: foji-api-dev
   APP_RUNNER_SERVICE: foji-api-prod
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
       - name: Validate confirmation
         if: ${{ github.event.inputs.confirm != 'deploy' }}
         run: |
-          echo "Deployment cancelled: confirmation input was not 'deploy'."
+          echo "Deployment cancelled: type 'deploy' to confirm."
           exit 1
 
       - name: Checkout
@@ -47,23 +47,92 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Run EF Core migrations
+      - name: Deploy to App Runner (create or update)
         env:
-          CONNECTION_STRING: ${{ secrets.PROD_DATABASE_URL }}
+          IMAGE: ${{ steps.build-image.outputs.image }}
         run: |
-          dotnet tool install --global dotnet-ef
-          dotnet ef database update \
-            --project src/FojiApi.Infrastructure/FojiApi.Infrastructure.csproj \
-            --startup-project src/FojiApi.Web.API/FojiApi.Web.API.csproj \
-            --connection "$CONNECTION_STRING"
+          IMAGE_CONFIG='{
+            "RuntimeEnvironmentVariables": {
+              "ASPNETCORE_ENVIRONMENT": "Production",
+              "AWS_SSM_PREFIX": "/foji/prod/",
+              "AWS_REGION": "us-east-2"
+            },
+            "Port": "8080"
+          }'
 
-      - name: Deploy to App Runner
+          SERVICE_ARN=$(aws apprunner list-services \
+            --query "ServiceSummaryList[?ServiceName=='${{ env.APP_RUNNER_SERVICE }}'].ServiceArn" \
+            --output text)
+
+          if [ -z "$SERVICE_ARN" ] || [ "$SERVICE_ARN" = "None" ]; then
+            echo "Creating new App Runner service..."
+            aws apprunner create-service \
+              --service-name ${{ env.APP_RUNNER_SERVICE }} \
+              --source-configuration '{
+                "AuthenticationConfiguration": {
+                  "AccessRoleArn": "${{ secrets.APP_RUNNER_ECR_ROLE_ARN }}"
+                },
+                "AutoDeploymentsEnabled": false,
+                "ImageRepository": {
+                  "ImageIdentifier": "'"$IMAGE"'",
+                  "ImageRepositoryType": "ECR",
+                  "ImageConfiguration": '"$IMAGE_CONFIG"'
+                }
+              }' \
+              --instance-configuration '{
+                "Cpu": "1 vCPU",
+                "Memory": "2 GB",
+                "InstanceRoleArn": "${{ secrets.APP_RUNNER_INSTANCE_ROLE_ARN }}"
+              }' \
+              --health-check-configuration '{
+                "Protocol": "HTTP",
+                "Path": "/health",
+                "Interval": 20,
+                "Timeout": 5,
+                "HealthyThreshold": 1,
+                "UnhealthyThreshold": 3
+              }'
+          else
+            echo "Updating existing App Runner service..."
+            aws apprunner update-service \
+              --service-arn "$SERVICE_ARN" \
+              --source-configuration '{
+                "AuthenticationConfiguration": {
+                  "AccessRoleArn": "${{ secrets.APP_RUNNER_ECR_ROLE_ARN }}"
+                },
+                "AutoDeploymentsEnabled": false,
+                "ImageRepository": {
+                  "ImageIdentifier": "'"$IMAGE"'",
+                  "ImageRepositoryType": "ECR",
+                  "ImageConfiguration": '"$IMAGE_CONFIG"'
+                }
+              }' \
+              --instance-configuration '{
+                "InstanceRoleArn": "${{ secrets.APP_RUNNER_INSTANCE_ROLE_ARN }}"
+              }'
+          fi
+
+      - name: Wait for App Runner to stabilize
         run: |
-          aws apprunner update-service \
-            --service-arn ${{ secrets.PROD_APP_RUNNER_SERVICE_ARN }} \
-            --source-configuration "{\"ImageRepository\":{\"ImageIdentifier\":\"${{ steps.build-image.outputs.image }}\",\"ImageRepositoryType\":\"ECR\"}}"
+          SERVICE_ARN=$(aws apprunner list-services \
+            --query "ServiceSummaryList[?ServiceName=='${{ env.APP_RUNNER_SERVICE }}'].ServiceArn" \
+            --output text)
+          for i in $(seq 1 30); do
+            STATUS=$(aws apprunner describe-service \
+              --service-arn "$SERVICE_ARN" \
+              --query "Service.Status" --output text)
+            echo "Status: $STATUS (attempt $i/30)"
+            if [ "$STATUS" = "RUNNING" ]; then
+              URL=$(aws apprunner describe-service \
+                --service-arn "$SERVICE_ARN" \
+                --query "Service.ServiceUrl" --output text)
+              echo "## Prod Deployment" >> $GITHUB_STEP_SUMMARY
+              echo "**URL**: https://$URL" >> $GITHUB_STEP_SUMMARY
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "Deployment timed out" && exit 1

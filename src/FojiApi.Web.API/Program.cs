@@ -1,11 +1,35 @@
 using System.Text;
 using FojiApi.Infrastructure;
+using FojiApi.Infrastructure.Data;
 using FojiApi.Web.API.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// AWS Systems Manager Parameter Store — loads config from SSM in deployed environments
+var ssmPrefix = Environment.GetEnvironmentVariable("AWS_SSM_PREFIX");
+if (!string.IsNullOrEmpty(ssmPrefix))
+{
+    var ssmRegion = Environment.GetEnvironmentVariable("AWS_REGION") ?? "us-east-2";
+    builder.Configuration.AddSystemsManager(configSource =>
+    {
+        configSource.Path = ssmPrefix;
+        configSource.Optional = false;
+        configSource.ReloadAfter = TimeSpan.FromMinutes(5);
+        configSource.AwsOptions = new Amazon.Extensions.NETCore.Setup.AWSOptions
+        {
+            Region = Amazon.RegionEndpoint.GetBySystemName(ssmRegion)
+        };
+    });
+    Console.WriteLine($"[Config] Loaded from AWS SSM: {ssmPrefix}");
+}
+else
+{
+    Console.WriteLine("[Config] AWS_SSM_PREFIX not set — using local appsettings");
+}
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -72,6 +96,25 @@ builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
 
+// Auto-create database if it doesn't exist and apply pending migrations
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<FojiDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    try
+    {
+        logger.LogInformation("Ensuring database exists and applying migrations...");
+        await db.Database.MigrateAsync();
+        logger.LogInformation("Database is up to date.");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to migrate database on startup.");
+        throw;
+    }
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -85,4 +128,4 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-app.Run();
+await app.RunAsync();
