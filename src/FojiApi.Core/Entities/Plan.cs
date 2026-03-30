@@ -6,7 +6,10 @@ public class Plan : BaseEntity
     public string Name { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
     public string? Description { get; set; }
-    public decimal MonthlyPriceUsd { get; set; }
+    public decimal MonthlyPrice { get; set; }
+
+    /// <summary>ISO 4217 currency code. Defaults to USD for backwards compatibility.</summary>
+    public string Currency { get; set; } = "USD";
     public string? StripePriceId { get; set; }
     public int MaxAgents { get; set; }
     public bool HasWhatsApp { get; set; } = false;

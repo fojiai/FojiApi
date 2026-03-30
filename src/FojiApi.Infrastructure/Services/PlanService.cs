@@ -13,7 +13,7 @@ public class PlanService(FojiDbContext db) : IPlanService
     {
         return await db.Plans
             .Where(p => p.IsActive && p.IsPublic)
-            .OrderBy(p => p.MonthlyPriceUsd)
+            .OrderBy(p => p.MonthlyPrice)
             .Select(p => ToResult(p))
             .ToListAsync();
     }
@@ -22,7 +22,7 @@ public class PlanService(FojiDbContext db) : IPlanService
     {
         return await db.Plans
             .OrderBy(p => p.IsPublic ? 0 : 1)
-            .ThenBy(p => p.MonthlyPriceUsd)
+            .ThenBy(p => p.MonthlyPrice)
             .Select(p => ToResult(p))
             .ToListAsync();
     }
@@ -34,7 +34,8 @@ public class PlanService(FojiDbContext db) : IPlanService
             Name = req.Name,
             Slug = req.Slug,
             Description = req.Description,
-            MonthlyPriceUsd = req.MonthlyPriceUsd,
+            MonthlyPrice = req.MonthlyPrice,
+            Currency = req.Currency ?? "USD",
             StripePriceId = req.StripePriceId,
             MaxAgents = req.MaxAgents,
             HasWhatsApp = req.HasWhatsApp,
@@ -59,7 +60,8 @@ public class PlanService(FojiDbContext db) : IPlanService
         plan.Name = req.Name;
         plan.Slug = req.Slug;
         plan.Description = req.Description;
-        plan.MonthlyPriceUsd = req.MonthlyPriceUsd;
+        plan.MonthlyPrice = req.MonthlyPrice;
+        plan.Currency = req.Currency ?? plan.Currency;
         plan.StripePriceId = req.StripePriceId;
         plan.MaxAgents = req.MaxAgents;
         plan.HasWhatsApp = req.HasWhatsApp;
@@ -93,7 +95,7 @@ public class PlanService(FojiDbContext db) : IPlanService
     }
 
     private static PlanResult ToResult(Plan p)
-        => new(p.Id, p.Name, p.Slug, p.Description, p.MonthlyPriceUsd, p.MaxAgents,
+        => new(p.Id, p.Name, p.Slug, p.Description, p.MonthlyPrice, p.Currency, p.MaxAgents,
                p.HasWhatsApp, p.HasEscalationContacts, p.MaxConversationsPerMonth, p.MaxMessagesPerMonth,
                p.TrialDays, p.IsPublic, p.IsActive, p.CustomForCompanyId);
 }

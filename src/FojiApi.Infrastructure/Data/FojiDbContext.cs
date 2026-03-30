@@ -109,7 +109,8 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.HasIndex(p => p.Slug).IsUnique();
             e.Property(p => p.Name).HasMaxLength(100).IsRequired();
             e.Property(p => p.Slug).HasMaxLength(50).IsRequired();
-            e.Property(p => p.MonthlyPriceUsd).HasPrecision(10, 2);
+            e.Property(p => p.MonthlyPrice).HasPrecision(10, 2);
+            e.Property(p => p.Currency).HasMaxLength(3).HasDefaultValue("USD");
             e.Property(p => p.IsPublic).HasDefaultValue(true);
             e.HasOne(p => p.CustomForCompany)
                 .WithMany()
