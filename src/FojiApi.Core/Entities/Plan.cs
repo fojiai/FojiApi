@@ -12,6 +12,9 @@ public class Plan : BaseEntity
     public string Currency { get; set; } = "USD";
     public string? StripePriceId { get; set; }
     public int MaxAgents { get; set; }
+
+    /// <summary>Maximum team members (including owner) per company. 0 = unlimited.</summary>
+    public int MaxMembers { get; set; } = 0;
     public bool HasWhatsApp { get; set; } = false;
     public bool HasEscalationContacts { get; set; } = false;
 

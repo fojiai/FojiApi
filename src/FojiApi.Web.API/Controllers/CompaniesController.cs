@@ -8,6 +8,7 @@ namespace FojiApi.Web.API.Controllers;
 public class CompaniesController(
     ICompanyService companyService,
     IAnalyticsService analyticsService,
+    IPlanEnforcementService planEnforcement,
     ICurrentUserService currentUser) : BaseController(currentUser)
 {
     [HttpGet("check-slug")]
@@ -57,6 +58,7 @@ public class CompaniesController(
     public async Task<IActionResult> InviteMember(int id, [FromBody] InviteMemberRequest req)
     {
         EnsureCompanyAccess(id, CompanyRole.Admin);
+        await planEnforcement.EnsureCanInviteMemberAsync(id);
         await companyService.InviteMemberAsync(id, CurrentUser.UserId, req.Email, req.Role);
         return Ok(new { message = "Invitation sent." });
     }

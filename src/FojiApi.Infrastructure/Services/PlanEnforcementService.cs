@@ -40,6 +40,26 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
                 "Escalation contacts are available on the Professional and Scale plans. Please upgrade to enable this feature.");
     }
 
+    public async Task EnsureCanInviteMemberAsync(int companyId)
+    {
+        var plan = await GetActivePlanAsync(companyId);
+        if (plan == null)
+            throw new InvalidOperationException("No active subscription found. Please subscribe to a plan to invite members.");
+
+        if (plan.MaxMembers > 0)
+        {
+            var memberCount = await db.UserCompanies
+                .CountAsync(uc => uc.CompanyId == companyId && uc.IsActive);
+            var pendingInvites = await db.Invitations
+                .CountAsync(i => i.CompanyId == companyId && i.AcceptedAt == null && i.ExpiresAt > DateTime.UtcNow);
+
+            if (memberCount + pendingInvites >= plan.MaxMembers)
+                throw new InvalidOperationException(
+                    $"Your {plan.Name} plan allows up to {plan.MaxMembers} team member(s). " +
+                    "Please upgrade your plan or remove an existing member.");
+        }
+    }
+
     public async Task EnsureHasActiveSubscriptionAsync(int companyId)
     {
         var subscription = await db.Subscriptions
