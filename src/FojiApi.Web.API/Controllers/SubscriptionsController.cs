@@ -50,14 +50,14 @@ public class SubscriptionsController(IBillingService billingService, ICurrentUse
 }
 
 public record CreateCheckoutRequest(
-    [property: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.Required]
     int CompanyId,
 
-    [property: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.Required]
     int PlanId
 );
 
 public record PortalRequest(
-    [property: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.Required]
     int CompanyId
 );

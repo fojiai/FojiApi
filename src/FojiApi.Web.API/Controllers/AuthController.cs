@@ -51,44 +51,44 @@ public class AuthController(IAuthService authService) : ControllerBase
 }
 
 public record SignupRequest(
-    [property: System.ComponentModel.DataAnnotations.Required]
-    [property: System.ComponentModel.DataAnnotations.EmailAddress]
-    [property: System.ComponentModel.DataAnnotations.StringLength(254)]
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.EmailAddress]
+    [param: System.ComponentModel.DataAnnotations.StringLength(254)]
     string Email,
 
-    [property: System.ComponentModel.DataAnnotations.Required]
-    [property: System.ComponentModel.DataAnnotations.StringLength(128, MinimumLength = 8)]
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.StringLength(128, MinimumLength = 8)]
     string Password,
 
-    [property: System.ComponentModel.DataAnnotations.Required]
-    [property: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
     string FirstName,
 
-    [property: System.ComponentModel.DataAnnotations.Required]
-    [property: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
     string LastName
 );
 
 public record LoginRequest(
-    [property: System.ComponentModel.DataAnnotations.Required]
-    [property: System.ComponentModel.DataAnnotations.EmailAddress]
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.EmailAddress]
     string Email,
 
-    [property: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.Required]
     string Password
 );
 
 public record ForgotPasswordRequest(
-    [property: System.ComponentModel.DataAnnotations.Required]
-    [property: System.ComponentModel.DataAnnotations.EmailAddress]
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.EmailAddress]
     string Email
 );
 
 public record ResetPasswordRequest(
-    [property: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.Required]
     string Token,
 
-    [property: System.ComponentModel.DataAnnotations.Required]
-    [property: System.ComponentModel.DataAnnotations.StringLength(128, MinimumLength = 8)]
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.StringLength(128, MinimumLength = 8)]
     string NewPassword
 );

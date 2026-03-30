@@ -172,30 +172,30 @@ public class AdminController(
 // ── Request records ───────────────────────────────────────────────────────────
 
 public record InviteAdminRequest(
-    [property: System.ComponentModel.DataAnnotations.Required]
-    [property: System.ComponentModel.DataAnnotations.EmailAddress]
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.EmailAddress]
     string Email
 );
 
 public record AcceptAdminInviteRequest(
-    [property: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.Required]
     string Token,
 
-    [property: System.ComponentModel.DataAnnotations.Required]
-    [property: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
     string FirstName,
 
-    [property: System.ComponentModel.DataAnnotations.Required]
-    [property: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
     string LastName,
 
-    [property: System.ComponentModel.DataAnnotations.Required]
-    [property: System.ComponentModel.DataAnnotations.StringLength(128, MinimumLength = 8)]
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.StringLength(128, MinimumLength = 8)]
     string Password
 );
 
 public record UpdateNotesRequest(
-    [property: System.ComponentModel.DataAnnotations.StringLength(2000)]
+    [param: System.ComponentModel.DataAnnotations.StringLength(2000)]
     string? Notes
 );
 

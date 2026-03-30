@@ -22,18 +22,18 @@ public class UsersController(IUserService userService, ICurrentUserService curre
 }
 
 public record UpdateUserRequest(
-    [property: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
+    [param: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
     string? FirstName,
 
-    [property: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
+    [param: System.ComponentModel.DataAnnotations.StringLength(100, MinimumLength = 1)]
     string? LastName
 );
 
 public record ChangePasswordRequest(
-    [property: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.Required]
     string CurrentPassword,
 
-    [property: System.ComponentModel.DataAnnotations.Required]
-    [property: System.ComponentModel.DataAnnotations.StringLength(128, MinimumLength = 8)]
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.StringLength(128, MinimumLength = 8)]
     string NewPassword
 );
