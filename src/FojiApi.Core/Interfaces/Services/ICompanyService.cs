@@ -4,6 +4,7 @@ namespace FojiApi.Core.Interfaces.Services;
 
 public interface ICompanyService
 {
+    Task<IEnumerable<UserCompanyResult>> GetUserCompaniesAsync(int userId);
     Task<bool> IsSlugAvailableAsync(string slug);
     Task<CreateCompanyResult> CreateCompanyAsync(int userId, string name, string? slug, string? description);
     Task<CompanyDetailResult> GetCompanyAsync(int companyId);
@@ -27,3 +28,4 @@ public record ActiveSubscriptionResult(
 );
 public record MemberResult(int UserId, string Email, string FirstName, string LastName, string Role, DateTime JoinedAt);
 public record InvitationResult(int Id, string Email, string Role, DateTime ExpiresAt, DateTime? AcceptedAt);
+public record UserCompanyResult(int CompanyId, string Name, string Slug, string Role);

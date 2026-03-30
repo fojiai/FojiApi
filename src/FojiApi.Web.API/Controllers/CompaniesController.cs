@@ -11,6 +11,13 @@ public class CompaniesController(
     IPlanEnforcementService planEnforcement,
     ICurrentUserService currentUser) : BaseController(currentUser)
 {
+    /// <summary>GET /api/companies/mine — returns all companies the current user belongs to.</summary>
+    [HttpGet("mine")]
+    public async Task<IActionResult> GetMyCompanies()
+    {
+        return Ok(await companyService.GetUserCompaniesAsync(CurrentUser.UserId));
+    }
+
     [HttpGet("check-slug")]
     public async Task<IActionResult> CheckSlug([FromQuery] string slug)
     {

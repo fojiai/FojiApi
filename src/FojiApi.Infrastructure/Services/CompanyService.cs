@@ -9,6 +9,16 @@ namespace FojiApi.Infrastructure.Services;
 
 public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailService emailService) : ICompanyService
 {
+    public async Task<IEnumerable<UserCompanyResult>> GetUserCompaniesAsync(int userId)
+    {
+        return await db.UserCompanies
+            .Include(uc => uc.Company)
+            .Where(uc => uc.UserId == userId && uc.IsActive)
+            .OrderBy(uc => uc.JoinedAt)
+            .Select(uc => new UserCompanyResult(uc.CompanyId, uc.Company.Name, uc.Company.Slug, uc.Role.ToString().ToLower()))
+            .ToListAsync();
+    }
+
     public async Task<bool> IsSlugAvailableAsync(string slug)
     {
         var normalized = slug.ToLower().Trim();
