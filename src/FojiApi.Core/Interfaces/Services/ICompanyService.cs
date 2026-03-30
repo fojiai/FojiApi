@@ -28,4 +28,3 @@ public record ActiveSubscriptionResult(
 );
 public record MemberResult(int UserId, string Email, string FirstName, string LastName, string Role, DateTime JoinedAt);
 public record InvitationResult(int Id, string Email, string Role, DateTime ExpiresAt, DateTime? AcceptedAt);
-public record UserCompanyResult(int CompanyId, string Name, string Slug, string Role);
