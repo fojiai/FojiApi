@@ -4,6 +4,7 @@ namespace FojiApi.Core.Interfaces.Services;
 
 public interface ICompanyService
 {
+    Task<bool> IsSlugAvailableAsync(string slug);
     Task<CreateCompanyResult> CreateCompanyAsync(int userId, string name, string? slug, string? description);
     Task<CompanyDetailResult> GetCompanyAsync(int companyId);
     Task<CompanyDetailResult> UpdateCompanyAsync(int companyId, string? name, string? description);

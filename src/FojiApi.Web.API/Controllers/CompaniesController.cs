@@ -10,6 +10,13 @@ public class CompaniesController(
     IAnalyticsService analyticsService,
     ICurrentUserService currentUser) : BaseController(currentUser)
 {
+    [HttpGet("check-slug")]
+    public async Task<IActionResult> CheckSlug([FromQuery] string slug)
+    {
+        var available = await companyService.IsSlugAvailableAsync(slug);
+        return Ok(new { available });
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateCompany([FromBody] CreateCompanyRequest req)
     {

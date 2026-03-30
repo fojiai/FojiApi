@@ -9,6 +9,12 @@ namespace FojiApi.Infrastructure.Services;
 
 public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailService emailService) : ICompanyService
 {
+    public async Task<bool> IsSlugAvailableAsync(string slug)
+    {
+        var normalized = slug.ToLower().Trim();
+        return !await db.Companies.AnyAsync(c => c.Slug == normalized);
+    }
+
     public async Task<CreateCompanyResult> CreateCompanyAsync(int userId, string name, string? slug, string? description)
     {
         var resolvedSlug = System.Text.RegularExpressions.Regex
@@ -18,20 +24,23 @@ public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailServ
         if (await db.Companies.AnyAsync(c => c.Slug == resolvedSlug))
             throw new ConflictException("A company with this slug already exists. Please choose a different one.");
 
+        // Load the user first so EF can resolve the FK navigation on UserCompany
+        var user = await db.Users.Include(u => u.UserCompanies).FirstAsync(u => u.Id == userId);
+
         var company = new Company { Name = name.Trim(), Slug = resolvedSlug, Description = description?.Trim() };
         db.Companies.Add(company);
-        await db.SaveChangesAsync();
 
-        db.UserCompanies.Add(new UserCompany
+        var userCompany = new UserCompany
         {
-            UserId = userId,
-            CompanyId = company.Id,
+            User = user,
+            Company = company,
             Role = CompanyRole.Owner,
             JoinedAt = DateTime.UtcNow
-        });
+        };
+        db.UserCompanies.Add(userCompany);
+
         await db.SaveChangesAsync();
 
-        var user = await db.Users.Include(u => u.UserCompanies).FirstAsync(u => u.Id == userId);
         var newToken = jwtService.GenerateToken(user, user.UserCompanies.Where(uc => uc.IsActive));
 
         return new CreateCompanyResult(company.Id, company.Name, company.Slug, newToken);
