@@ -63,4 +63,13 @@ public class AIModelService(FojiDbContext db) : IAIModelService
         await db.SaveChangesAsync();
         return new AIModelResult(model.Id, model.Name, model.DisplayName, model.Provider.ToString(), model.ModelId, model.InputCostPer1M, model.OutputCostPer1M, model.IsActive, model.IsDefault);
     }
+
+    public async Task DeleteModelAsync(int id)
+    {
+        var model = await db.AIModels.FindAsync(id)
+            ?? throw new NotFoundException("AI model not found.");
+
+        db.AIModels.Remove(model);
+        await db.SaveChangesAsync();
+    }
 }

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace FojiApi.Web.API.Controllers;
 
+[Route("api/ai-models")]
 public class AIModelsController(IAIModelService aiModelService, ICurrentUserService currentUser) : BaseController(currentUser)
 {
     [HttpGet]
@@ -23,6 +24,14 @@ public class AIModelsController(IAIModelService aiModelService, ICurrentUserServ
     {
         if (!CurrentUser.IsSuperAdmin) throw new ForbiddenException();
         return Ok(await aiModelService.UpdateModelAsync(id, req.DisplayName, req.IsActive, req.IsDefault, req.InputCostPer1M, req.OutputCostPer1M));
+    }
+
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> DeleteModel(int id)
+    {
+        if (!CurrentUser.IsSuperAdmin) throw new ForbiddenException();
+        await aiModelService.DeleteModelAsync(id);
+        return NoContent();
     }
 }
 
