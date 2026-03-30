@@ -1,4 +1,5 @@
 using FojiApi.Core.Enums;
+using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -13,13 +14,13 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
     {
         var plan = await GetActivePlanAsync(companyId);
         if (plan == null)
-            throw new InvalidOperationException("No active subscription found. Please subscribe to a plan to create agents.");
+            throw new DomainException("No active subscription found. Please subscribe to a plan to create agents.");
 
         var activeAgentCount = await db.Agents
             .CountAsync(a => a.CompanyId == companyId && a.IsActive);
 
         if (activeAgentCount >= plan.MaxAgents)
-            throw new InvalidOperationException(
+            throw new DomainException(
                 $"Your {plan.Name} plan allows up to {plan.MaxAgents} active agent(s). " +
                 "Please upgrade your plan or deactivate an existing agent.");
     }
@@ -28,7 +29,7 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
     {
         var plan = await GetActivePlanAsync(companyId);
         if (plan == null || !plan.HasWhatsApp)
-            throw new InvalidOperationException(
+            throw new DomainException(
                 "WhatsApp integration is only available on the Scale plan. Please upgrade to enable this feature.");
     }
 
@@ -36,7 +37,7 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
     {
         var plan = await GetActivePlanAsync(companyId);
         if (plan == null || !plan.HasEscalationContacts)
-            throw new InvalidOperationException(
+            throw new DomainException(
                 "Escalation contacts are available on the Professional and Scale plans. Please upgrade to enable this feature.");
     }
 
@@ -44,7 +45,7 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
     {
         var plan = await GetActivePlanAsync(companyId);
         if (plan == null)
-            throw new InvalidOperationException("No active subscription found. Please subscribe to a plan to invite members.");
+            throw new DomainException("No active subscription found. Please subscribe to a plan to invite members.");
 
         if (plan.MaxMembers > 0)
         {
@@ -54,7 +55,7 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
                 .CountAsync(i => i.CompanyId == companyId && i.AcceptedAt == null && i.ExpiresAt > DateTime.UtcNow);
 
             if (memberCount + pendingInvites >= plan.MaxMembers)
-                throw new InvalidOperationException(
+                throw new DomainException(
                     $"Your {plan.Name} plan allows up to {plan.MaxMembers} team member(s). " +
                     "Please upgrade your plan or remove an existing member.");
         }
@@ -68,13 +69,13 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
             .FirstOrDefaultAsync();
 
         if (subscription == null)
-            throw new InvalidOperationException("No active subscription found. Please subscribe to a plan to continue.");
+            throw new DomainException("No active subscription found. Please subscribe to a plan to continue.");
     }
 
     public void EnsureFileSizeAllowed(long fileSizeBytes)
     {
         if (fileSizeBytes > MaxFileSizeBytes)
-            throw new InvalidOperationException(
+            throw new DomainException(
                 $"File size exceeds the maximum allowed size of 30 MB. Your file is {fileSizeBytes / 1024 / 1024} MB.");
     }
 
