@@ -25,7 +25,8 @@ public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailServ
             throw new ConflictException("A company with this slug already exists. Please choose a different one.");
 
         // Load the user first so EF can resolve the FK navigation on UserCompany
-        var user = await db.Users.Include(u => u.UserCompanies).FirstAsync(u => u.Id == userId);
+        var user = await db.Users.Include(u => u.UserCompanies).FirstOrDefaultAsync(u => u.Id == userId)
+            ?? throw new NotFoundException($"User with id {userId} not found.");
 
         var company = new Company { Name = name.Trim(), Slug = resolvedSlug, Description = description?.Trim() };
         db.Companies.Add(company);
