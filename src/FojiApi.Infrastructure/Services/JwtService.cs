@@ -22,7 +22,7 @@ public class JwtService(IConfiguration configuration) : IJwtService
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var companiesJson = JsonSerializer.Serialize(
-            userCompanies.Select(uc => new { companyId = uc.CompanyId, role = uc.Role.ToString().ToLower() })
+            userCompanies.Select(uc => new { companyId = uc.CompanyId, role = uc.Role.ToString().ToLower(), name = uc.Company?.Name ?? "" })
         );
 
         var claims = new[]

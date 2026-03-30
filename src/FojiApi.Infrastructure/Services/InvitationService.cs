@@ -66,7 +66,7 @@ public class InvitationService(FojiDbContext db, IJwtService jwtService) : IInvi
         await db.SaveChangesAsync();
 
         var userWithCompanies = await db.Users
-            .Include(u => u.UserCompanies)
+            .Include(u => u.UserCompanies).ThenInclude(uc => uc.Company)
             .FirstAsync(u => u.Id == userId);
 
         var newToken = jwtService.GenerateToken(userWithCompanies, userWithCompanies.UserCompanies.Where(uc => uc.IsActive));

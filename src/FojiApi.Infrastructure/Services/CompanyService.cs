@@ -25,7 +25,7 @@ public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailServ
             throw new ConflictException("A company with this slug already exists. Please choose a different one.");
 
         // Load the user first so EF can resolve the FK navigation on UserCompany
-        var user = await db.Users.Include(u => u.UserCompanies).FirstOrDefaultAsync(u => u.Id == userId)
+        var user = await db.Users.Include(u => u.UserCompanies).ThenInclude(uc => uc.Company).FirstOrDefaultAsync(u => u.Id == userId)
             ?? throw new NotFoundException($"User with id {userId} not found.");
 
         var company = new Company { Name = name.Trim(), Slug = resolvedSlug, Description = description?.Trim() };
@@ -103,6 +103,28 @@ public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailServ
             throw new DomainException("You cannot remove yourself. Transfer ownership first.");
 
         db.UserCompanies.Remove(membership);
+        await db.SaveChangesAsync();
+    }
+
+    public async Task<IEnumerable<InvitationResult>> GetInvitationsAsync(int companyId)
+    {
+        return await db.Invitations
+            .Where(i => i.CompanyId == companyId)
+            .OrderByDescending(i => i.CreatedAt)
+            .Select(i => new InvitationResult(i.Id, i.Email, i.Role.ToString().ToLower(), i.ExpiresAt, i.AcceptedAt))
+            .ToListAsync();
+    }
+
+    public async Task RevokeInvitationAsync(int companyId, int invitationId)
+    {
+        var invitation = await db.Invitations
+            .FirstOrDefaultAsync(i => i.Id == invitationId && i.CompanyId == companyId)
+            ?? throw new NotFoundException("Invitation not found.");
+
+        if (invitation.AcceptedAt != null)
+            throw new DomainException("Cannot revoke an accepted invitation.");
+
+        db.Invitations.Remove(invitation);
         await db.SaveChangesAsync();
     }
 

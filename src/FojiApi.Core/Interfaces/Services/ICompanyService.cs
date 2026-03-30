@@ -10,7 +10,9 @@ public interface ICompanyService
     Task<CompanyDetailResult> UpdateCompanyAsync(int companyId, string? name, string? description);
     Task<IEnumerable<MemberResult>> GetMembersAsync(int companyId);
     Task RemoveMemberAsync(int companyId, int targetUserId, int requestingUserId);
+    Task<IEnumerable<InvitationResult>> GetInvitationsAsync(int companyId);
     Task InviteMemberAsync(int companyId, int inviterUserId, string email, string role);
+    Task RevokeInvitationAsync(int companyId, int invitationId);
     Task DeleteCompanyAsync(int companyId, int requestingUserId);
 }
 
@@ -24,3 +26,4 @@ public record ActiveSubscriptionResult(
     DateTime? CurrentPeriodEnd, DateTime? TrialEndsAt
 );
 public record MemberResult(int UserId, string Email, string FirstName, string LastName, string Role, DateTime JoinedAt);
+public record InvitationResult(int Id, string Email, string Role, DateTime ExpiresAt, DateTime? AcceptedAt);

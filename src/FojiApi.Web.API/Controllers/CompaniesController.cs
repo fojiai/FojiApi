@@ -54,13 +54,28 @@ public class CompaniesController(
         return NoContent();
     }
 
-    [HttpPost("{id:int}/invite")]
+    [HttpGet("{id:int}/invitations")]
+    public async Task<IActionResult> GetInvitations(int id)
+    {
+        EnsureCompanyAccess(id, CompanyRole.User);
+        return Ok(await companyService.GetInvitationsAsync(id));
+    }
+
+    [HttpPost("{id:int}/invitations")]
     public async Task<IActionResult> InviteMember(int id, [FromBody] InviteMemberRequest req)
     {
         EnsureCompanyAccess(id, CompanyRole.Admin);
         await planEnforcement.EnsureCanInviteMemberAsync(id);
         await companyService.InviteMemberAsync(id, CurrentUser.UserId, req.Email, req.Role);
         return Ok(new { message = "Invitation sent." });
+    }
+
+    [HttpDelete("{id:int}/invitations/{invitationId:int}")]
+    public async Task<IActionResult> RevokeInvitation(int id, int invitationId)
+    {
+        EnsureCompanyAccess(id, CompanyRole.Admin);
+        await companyService.RevokeInvitationAsync(id, invitationId);
+        return NoContent();
     }
 
     /// <summary>
