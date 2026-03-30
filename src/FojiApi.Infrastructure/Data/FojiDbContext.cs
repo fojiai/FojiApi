@@ -18,6 +18,7 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<SystemAdminInvitation> SystemAdminInvitations => Set<SystemAdminInvitation>();
     public DbSet<DailyStat> DailyStats => Set<DailyStat>();
+    public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -159,6 +160,17 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.HasIndex(d => new { d.CompanyId, d.StatDate }).IsUnique();
             e.Property(d => d.StatDate).HasColumnType("date").IsRequired();
             e.HasOne(d => d.Company).WithMany(c => c.DailyStats).HasForeignKey(d => d.CompanyId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // PlatformSetting
+        modelBuilder.Entity<PlatformSetting>(e =>
+        {
+            e.HasKey(s => s.Id);
+            e.Property(s => s.Key).HasMaxLength(100).IsRequired();
+            e.HasIndex(s => s.Key).IsUnique();
+            e.Property(s => s.Value).HasMaxLength(2000).IsRequired();
+            e.Property(s => s.Label).HasMaxLength(200);
+            e.Property(s => s.Category).HasMaxLength(50);
         });
 
         // AuditLog

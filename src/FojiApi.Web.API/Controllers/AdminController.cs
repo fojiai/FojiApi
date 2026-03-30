@@ -13,6 +13,7 @@ public class AdminController(
     ISystemAdminInvitationService invitationService,
     IAdminCompanyService adminCompanyService,
     IPlanService planService,
+    IPlatformSettingService platformSettingService,
     ICurrentUserService currentUser) : BaseController(currentUser)
 {
     private void EnsureSuperAdmin()
@@ -167,6 +168,31 @@ public class AdminController(
         EnsureSuperAdmin();
         return Ok(await adminCompanyService.GetPlatformStatsAsync());
     }
+
+    // ── Platform settings (API keys) ─────────────────────────────────────────
+
+    [HttpGet("settings")]
+    public async Task<IActionResult> GetSettings()
+    {
+        EnsureSuperAdmin();
+        return Ok(await platformSettingService.GetAllAsync());
+    }
+
+    [HttpPut("settings")]
+    public async Task<IActionResult> UpsertSetting([FromBody] UpsertSettingRequest req)
+    {
+        EnsureSuperAdmin();
+        var result = await platformSettingService.UpsertAsync(req.Key, req.Value, req.Label, req.Category, req.IsSecret);
+        return Ok(result);
+    }
+
+    [HttpDelete("settings/{key}")]
+    public async Task<IActionResult> DeleteSetting(string key)
+    {
+        EnsureSuperAdmin();
+        await platformSettingService.DeleteAsync(key);
+        return NoContent();
+    }
 }
 
 // ── Request records ───────────────────────────────────────────────────────────
@@ -192,6 +218,24 @@ public record AcceptAdminInviteRequest(
     [param: System.ComponentModel.DataAnnotations.Required]
     [param: System.ComponentModel.DataAnnotations.StringLength(128, MinimumLength = 8)]
     string Password
+);
+
+public record UpsertSettingRequest(
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.StringLength(100)]
+    string Key,
+
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.StringLength(2000)]
+    string Value,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(200)]
+    string Label = "",
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(50)]
+    string Category = "",
+
+    bool IsSecret = true
 );
 
 public record UpdateNotesRequest(

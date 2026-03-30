@@ -58,6 +58,7 @@ public static class DependencyInjection
         services.AddScoped<ISystemAdminInvitationService, SystemAdminInvitationService>();
         services.AddScoped<IAdminCompanyService, AdminCompanyService>();
         services.AddScoped<IAnalyticsService, AnalyticsService>();
+        services.AddScoped<IPlatformSettingService, PlatformSettingService>();
         services.AddScoped<IWhatsAppWebhookService, WhatsAppWebhookService>();
         services.AddScoped<ITrialExpiryService, TrialExpiryService>();
 
