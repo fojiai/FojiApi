@@ -161,6 +161,23 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
             """);
     }
 
+    public async Task SendContactFormAsync(string toEmail, string fromName, string fromEmail, string subject, string category, string message)
+    {
+        await SendAsync(toEmail, $"[Foji AI — {category}] {subject}", $"""
+            <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
+              <h2 style="color:#111;">Nova mensagem de contato</h2>
+              <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+                <tr><td style="padding:8px 0;color:#666;width:100px;vertical-align:top;">De:</td><td style="padding:8px 0;"><strong>{fromName}</strong> &lt;{fromEmail}&gt;</td></tr>
+                <tr><td style="padding:8px 0;color:#666;vertical-align:top;">Categoria:</td><td style="padding:8px 0;">{category}</td></tr>
+                <tr><td style="padding:8px 0;color:#666;vertical-align:top;">Assunto:</td><td style="padding:8px 0;">{subject}</td></tr>
+              </table>
+              <div style="background:#f9f9f9;border:1px solid #eee;border-radius:8px;padding:16px;margin:16px 0;white-space:pre-wrap;">{message}</div>
+              <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
+              <p style="color:#999;font-size:12px;">Foji AI — Forje sua inteligência</p>
+            </div>
+            """);
+    }
+
     private async Task SendAsync(string toEmail, string subject, string html)
     {
         var message = new EmailMessage

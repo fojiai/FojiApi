@@ -29,6 +29,25 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
         var company = await db.Companies.FindAsync(companyId)
             ?? throw new NotFoundException("Company not found.");
 
+        // Check for existing active subscription
+        var existingSub = await db.Subscriptions
+            .Include(s => s.Plan)
+            .Where(s => s.CompanyId == companyId &&
+                        s.StripeSubscriptionId != null &&
+                        (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        // If already subscribed with Stripe, do an inline plan switch instead of new checkout
+        if (existingSub != null && !string.IsNullOrEmpty(existingSub.StripeSubscriptionId))
+        {
+            if (existingSub.PlanId == planId)
+                throw new DomainException("You are already on this plan.");
+
+            return await SwitchPlanAsync(existingSub, plan);
+        }
+
+        // No existing subscription — create a new checkout session
         var customerId = await EnsureStripeCustomerAsync(company, userId);
 
         var session = await new SessionService().CreateAsync(new SessionCreateOptions
@@ -49,6 +68,49 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
         });
 
         return session.Url;
+    }
+
+    /// <summary>
+    /// Switch an existing Stripe subscription to a different plan/price.
+    /// Uses proration so the customer pays the difference immediately (upgrade)
+    /// or gets a credit (downgrade).
+    /// Returns a redirect URL — either the billing page (instant switch) or
+    /// a Stripe payment page if additional payment is needed.
+    /// </summary>
+    private async Task<string> SwitchPlanAsync(Core.Entities.Subscription existingSub, Core.Entities.Plan newPlan)
+    {
+        var subService = new SubscriptionService();
+        var stripeSub = await subService.GetAsync(existingSub.StripeSubscriptionId!);
+
+        // The subscription should have exactly one item (the current price)
+        var currentItem = stripeSub.Items.Data.FirstOrDefault()
+            ?? throw new DomainException("Cannot modify subscription: no subscription items found.");
+
+        // Update the subscription with the new price, prorating immediately
+        await subService.UpdateAsync(existingSub.StripeSubscriptionId!, new SubscriptionUpdateOptions
+        {
+            Items =
+            [
+                new SubscriptionItemOptions
+                {
+                    Id = currentItem.Id,
+                    Price = newPlan.StripePriceId,
+                }
+            ],
+            ProrationBehavior = "create_prorations",
+            Metadata = new Dictionary<string, string>
+            {
+                ["companyId"] = existingSub.CompanyId.ToString(),
+                ["planId"] = newPlan.Id.ToString()
+            }
+        });
+
+        // Update local DB immediately (webhook will also fire, but this gives instant feedback)
+        existingSub.PlanId = newPlan.Id;
+        await db.SaveChangesAsync();
+
+        // No redirect needed — plan is switched instantly
+        return $"{AppBaseUrl}/billing?status=success&switched=true";
     }
 
     public async Task<string> CreateCustomerPortalSessionAsync(int companyId)
@@ -126,6 +188,19 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
 
         var stripeSub = await new SubscriptionService().GetAsync(session.SubscriptionId);
 
+        // Cancel any other active subscriptions for this company (prevent duplicates)
+        var otherSubs = await db.Subscriptions
+            .Where(s => s.CompanyId == companyId &&
+                        s.StripeSubscriptionId != stripeSub.Id &&
+                        (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
+            .ToListAsync();
+
+        foreach (var old in otherSubs)
+        {
+            old.Status = SubscriptionStatus.Canceled;
+            old.CanceledAt = DateTime.UtcNow;
+        }
+
         var existing = await db.Subscriptions
             .FirstOrDefaultAsync(s => s.CompanyId == companyId && s.StripeSubscriptionId == stripeSub.Id);
 
@@ -145,6 +220,7 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
         }
         else
         {
+            existing.PlanId = planId;
             existing.Status = MapStatus(stripeSub.Status);
             existing.CurrentPeriodStart = stripeSub.CurrentPeriodStart;
             existing.CurrentPeriodEnd = stripeSub.CurrentPeriodEnd;
@@ -157,10 +233,30 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
     {
         var sub = await db.Subscriptions.FirstOrDefaultAsync(s => s.StripeSubscriptionId == stripeSub.Id);
         if (sub == null) return;
+
         sub.Status = MapStatus(stripeSub.Status);
         sub.CurrentPeriodStart = stripeSub.CurrentPeriodStart;
         sub.CurrentPeriodEnd = stripeSub.CurrentPeriodEnd;
         sub.CanceledAt = stripeSub.CanceledAt;
+
+        // Sync PlanId if the price changed (plan switch via Stripe portal or API)
+        var currentPriceId = stripeSub.Items.Data.FirstOrDefault()?.Price?.Id;
+        if (!string.IsNullOrEmpty(currentPriceId))
+        {
+            var matchingPlan = await db.Plans.FirstOrDefaultAsync(p => p.StripePriceId == currentPriceId);
+            if (matchingPlan != null && matchingPlan.Id != sub.PlanId)
+            {
+                sub.PlanId = matchingPlan.Id;
+            }
+        }
+
+        // Also check metadata for planId (set by our SwitchPlanAsync)
+        if (stripeSub.Metadata.TryGetValue("planId", out var planIdStr) && int.TryParse(planIdStr, out var planId))
+        {
+            if (planId != sub.PlanId)
+                sub.PlanId = planId;
+        }
+
         await db.SaveChangesAsync();
     }
 
