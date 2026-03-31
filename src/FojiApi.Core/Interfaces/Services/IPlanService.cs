@@ -43,6 +43,7 @@ public record PlanResult(
     string? Description,
     decimal MonthlyPrice,
     string Currency,
+    string? StripePriceId,
     int MaxAgents,
     int MaxMembers,
     bool HasWhatsApp,

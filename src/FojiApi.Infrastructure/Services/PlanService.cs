@@ -97,7 +97,7 @@ public class PlanService(FojiDbContext db) : IPlanService
     }
 
     private static PlanResult ToResult(Plan p)
-        => new(p.Id, p.Name, p.Slug, p.Description, p.MonthlyPrice, p.Currency, p.MaxAgents, p.MaxMembers,
+        => new(p.Id, p.Name, p.Slug, p.Description, p.MonthlyPrice, p.Currency, p.StripePriceId, p.MaxAgents, p.MaxMembers,
                p.HasWhatsApp, p.HasEscalationContacts, p.MaxConversationsPerMonth, p.MaxMessagesPerMonth,
                p.TrialDays, p.IsPublic, p.IsActive, p.CustomForCompanyId);
 }

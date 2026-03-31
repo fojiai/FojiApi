@@ -1,6 +1,9 @@
+using FojiApi.Core.Entities;
 using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
+using FojiApi.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace FojiApi.Web.API.Controllers;
 
@@ -8,17 +11,31 @@ public class ContactController(
     IEmailService emailService,
     IPlatformSettingService platformSettingService,
     ICurrentUserService currentUser,
-    IConfiguration configuration) : BaseController(currentUser)
+    IConfiguration configuration,
+    FojiDbContext db) : BaseController(currentUser)
 {
     [HttpPost]
     public async Task<IActionResult> SendContactForm([FromBody] ContactFormRequest req)
     {
-        // Get recipient email from PlatformSettings, fallback to Resend:FromEmail
+        var senderName = req.Name?.Trim() ?? CurrentUser.Email;
+
+        // Save to database
+        var submission = new ContactSubmission
+        {
+            UserId = CurrentUser.UserId,
+            Name = senderName,
+            Email = CurrentUser.Email,
+            Category = req.Category.Trim(),
+            Subject = req.Subject.Trim(),
+            Message = req.Message.Trim(),
+        };
+        db.ContactSubmissions.Add(submission);
+        await db.SaveChangesAsync();
+
+        // Send email notification
         var contactEmail = await platformSettingService.GetValueAsync("CONTACT_EMAIL");
         if (string.IsNullOrEmpty(contactEmail))
             contactEmail = configuration["Resend:FromEmail"] ?? "support@foji.ai";
-
-        var senderName = req.Name?.Trim() ?? CurrentUser.Email;
 
         await emailService.SendContactFormAsync(
             toEmail: contactEmail,

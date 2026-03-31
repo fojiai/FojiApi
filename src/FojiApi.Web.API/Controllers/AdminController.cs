@@ -1,7 +1,9 @@
 using FojiApi.Core.Enums;
 using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
+using FojiApi.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace FojiApi.Web.API.Controllers;
 
@@ -14,6 +16,7 @@ public class AdminController(
     IAdminCompanyService adminCompanyService,
     IPlanService planService,
     IPlatformSettingService platformSettingService,
+    FojiDbContext db,
     ICurrentUserService currentUser) : BaseController(currentUser)
 {
     private void EnsureSuperAdmin()
@@ -193,6 +196,45 @@ public class AdminController(
         await platformSettingService.DeleteAsync(key);
         return NoContent();
     }
+
+    // ── Contact submissions ──────────────────────────────────────────────────
+
+    [HttpGet("contacts")]
+    public async Task<IActionResult> GetContacts([FromQuery] bool resolved = false, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    {
+        EnsureSuperAdmin();
+        var query = db.ContactSubmissions
+            .Include(c => c.User)
+            .Where(c => c.IsResolved == resolved)
+            .OrderByDescending(c => c.CreatedAt);
+
+        var total = await query.CountAsync();
+        var items = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(c => new
+            {
+                c.Id, c.Name, c.Email, c.Category, c.Subject, c.Message,
+                c.IsResolved, c.AdminNotes, c.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(new { items, total, page, pageSize });
+    }
+
+    [HttpPatch("contacts/{id:int}")]
+    public async Task<IActionResult> UpdateContact(int id, [FromBody] UpdateContactRequest req)
+    {
+        EnsureSuperAdmin();
+        var contact = await db.ContactSubmissions.FindAsync(id)
+            ?? throw new NotFoundException("Contact submission not found.");
+
+        if (req.IsResolved.HasValue) contact.IsResolved = req.IsResolved.Value;
+        if (req.AdminNotes != null) contact.AdminNotes = req.AdminNotes;
+
+        await db.SaveChangesAsync();
+        return Ok(new { contact.Id, contact.IsResolved, contact.AdminNotes });
+    }
 }
 
 // ── Request records ───────────────────────────────────────────────────────────
@@ -236,6 +278,12 @@ public record UpsertSettingRequest(
     string Category = "",
 
     bool IsSecret = true
+);
+
+public record UpdateContactRequest(
+    bool? IsResolved,
+    [param: System.ComponentModel.DataAnnotations.StringLength(2000)]
+    string? AdminNotes
 );
 
 public record UpdateNotesRequest(

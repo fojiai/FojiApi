@@ -19,6 +19,7 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
     public DbSet<SystemAdminInvitation> SystemAdminInvitations => Set<SystemAdminInvitation>();
     public DbSet<DailyStat> DailyStats => Set<DailyStat>();
     public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
+    public DbSet<ContactSubmission> ContactSubmissions => Set<ContactSubmission>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -172,6 +173,19 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.Property(s => s.Value).HasMaxLength(2000).IsRequired();
             e.Property(s => s.Label).HasMaxLength(200);
             e.Property(s => s.Category).HasMaxLength(50);
+        });
+
+        // ContactSubmission
+        modelBuilder.Entity<ContactSubmission>(e =>
+        {
+            e.HasKey(c => c.Id);
+            e.Property(c => c.Name).HasMaxLength(100);
+            e.Property(c => c.Email).HasMaxLength(200);
+            e.Property(c => c.Category).HasMaxLength(50);
+            e.Property(c => c.Subject).HasMaxLength(200);
+            e.Property(c => c.Message).HasMaxLength(5000);
+            e.Property(c => c.AdminNotes).HasMaxLength(2000);
+            e.HasOne(c => c.User).WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         // AuditLog
