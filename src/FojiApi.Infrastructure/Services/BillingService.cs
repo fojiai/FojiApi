@@ -38,13 +38,38 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
             .OrderByDescending(s => s.CreatedAt)
             .FirstOrDefaultAsync();
 
-        // If already subscribed with Stripe, do an inline plan switch instead of new checkout
+        // If already subscribed with Stripe, redirect to the customer portal
+        // so the user can review and confirm the plan change themselves.
         if (existingSub != null && !string.IsNullOrEmpty(existingSub.StripeSubscriptionId))
         {
             if (existingSub.PlanId == planId)
                 throw new DomainException("You are already on this plan.");
 
-            return await SwitchPlanAsync(existingSub, plan);
+            var portalSession = await new Stripe.BillingPortal.SessionService().CreateAsync(
+                new Stripe.BillingPortal.SessionCreateOptions
+                {
+                    Customer = company.StripeCustomerId,
+                    ReturnUrl = $"{AppBaseUrl}/billing",
+                    FlowData = new Stripe.BillingPortal.SessionFlowDataOptions
+                    {
+                        Type = "subscription_update_confirm",
+                        SubscriptionUpdateConfirm = new Stripe.BillingPortal.SessionFlowDataSubscriptionUpdateConfirmOptions
+                        {
+                            Subscription = existingSub.StripeSubscriptionId,
+                            Items =
+                            [
+                                new Stripe.BillingPortal.SessionFlowDataSubscriptionUpdateConfirmItemOptions
+                                {
+                                    Id = (await new SubscriptionService().GetAsync(existingSub.StripeSubscriptionId!))
+                                        .Items.Data.First().Id,
+                                    Price = plan.StripePriceId,
+                                    Quantity = 1,
+                                }
+                            ],
+                        },
+                    },
+                });
+            return portalSession.Url;
         }
 
         // No existing subscription — create a new checkout session
@@ -68,49 +93,6 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
         });
 
         return session.Url;
-    }
-
-    /// <summary>
-    /// Switch an existing Stripe subscription to a different plan/price.
-    /// Uses proration so the customer pays the difference immediately (upgrade)
-    /// or gets a credit (downgrade).
-    /// Returns a redirect URL — either the billing page (instant switch) or
-    /// a Stripe payment page if additional payment is needed.
-    /// </summary>
-    private async Task<string> SwitchPlanAsync(Core.Entities.Subscription existingSub, Core.Entities.Plan newPlan)
-    {
-        var subService = new SubscriptionService();
-        var stripeSub = await subService.GetAsync(existingSub.StripeSubscriptionId!);
-
-        // The subscription should have exactly one item (the current price)
-        var currentItem = stripeSub.Items.Data.FirstOrDefault()
-            ?? throw new DomainException("Cannot modify subscription: no subscription items found.");
-
-        // Update the subscription with the new price, prorating immediately
-        await subService.UpdateAsync(existingSub.StripeSubscriptionId!, new SubscriptionUpdateOptions
-        {
-            Items =
-            [
-                new SubscriptionItemOptions
-                {
-                    Id = currentItem.Id,
-                    Price = newPlan.StripePriceId,
-                }
-            ],
-            ProrationBehavior = "create_prorations",
-            Metadata = new Dictionary<string, string>
-            {
-                ["companyId"] = existingSub.CompanyId.ToString(),
-                ["planId"] = newPlan.Id.ToString()
-            }
-        });
-
-        // Update local DB immediately (webhook will also fire, but this gives instant feedback)
-        existingSub.PlanId = newPlan.Id;
-        await db.SaveChangesAsync();
-
-        // No redirect needed — plan is switched instantly
-        return $"{AppBaseUrl}/billing?status=success&switched=true";
     }
 
     public async Task<string> CreateCustomerPortalSessionAsync(int companyId)

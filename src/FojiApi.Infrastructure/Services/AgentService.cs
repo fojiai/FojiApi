@@ -49,11 +49,11 @@ public class AgentService(
     {
         await planEnforcement.EnsureCanCreateAgentAsync(companyId);
 
-        if (!Enum.TryParse<IndustryType>(industryType, true, out var parsedIndustry))
-            throw new DomainException($"Invalid industry type: {industryType}. Valid values: AccountingFinance, Law, InternalSystems.");
+        if (!Enum.TryParse<IndustryType>(industryType.Replace("_", ""), true, out var parsedIndustry))
+            throw new DomainException($"Invalid industry type: {industryType}. Valid values: accounting_finance, law, internal_systems.");
 
-        if (!Enum.TryParse<AgentLanguage>(agentLanguage ?? "PtBr", true, out var parsedLanguage))
-            throw new DomainException($"Invalid agent language: {agentLanguage}. Valid values: PtBr, En, Es.");
+        if (!Enum.TryParse<AgentLanguage>((agentLanguage ?? "pt-br").Replace("-", ""), true, out var parsedLanguage))
+            throw new DomainException($"Invalid agent language: {agentLanguage}. Valid values: pt-br, en, es.");
 
         var company = await db.Companies.FindAsync(companyId)
             ?? throw new NotFoundException("Company not found.");
