@@ -141,6 +141,21 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
             .OrderByDescending(s => s.CreatedAt)
             .FirstOrDefaultAsync();
 
+        // Self-healing: if the company has a Stripe customer but no active Stripe subscription
+        // locally, check Stripe for active subscriptions and sync them.
+        var hasActiveStripeSub = sub != null
+            && !string.IsNullOrEmpty(sub.StripeSubscriptionId)
+            && sub.Status is SubscriptionStatus.Active or SubscriptionStatus.Trialing;
+
+        if (!hasActiveStripeSub)
+        {
+            var company = await db.Companies.FindAsync(companyId);
+            if (company != null && !string.IsNullOrEmpty(company.StripeCustomerId))
+            {
+                sub = await SyncSubscriptionFromStripeAsync(companyId, company.StripeCustomerId) ?? sub;
+            }
+        }
+
         if (sub == null) return null;
 
         return new SubscriptionResult(
@@ -149,6 +164,100 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
             new SubscriptionPlanResult(sub.Plan.Id, sub.Plan.Name, sub.Plan.MaxAgents, sub.Plan.HasWhatsApp, sub.Plan.HasEscalationContacts, sub.Plan.MaxConversationsPerMonth, sub.Plan.MaxMessagesPerMonth),
             sub.CurrentPeriodStart, sub.CurrentPeriodEnd, sub.TrialEndsAt, sub.CanceledAt,
             !string.IsNullOrEmpty(sub.StripeSubscriptionId));
+    }
+
+    /// <summary>
+    /// Check Stripe for active subscriptions for a customer and sync them locally.
+    /// Returns the synced subscription if found, null otherwise.
+    /// </summary>
+    private async Task<Core.Entities.Subscription?> SyncSubscriptionFromStripeAsync(int companyId, string stripeCustomerId)
+    {
+        try
+        {
+            StripeConfiguration.ApiKey = SecretKey;
+            var stripeSubs = await new SubscriptionService().ListAsync(new SubscriptionListOptions
+            {
+                Customer = stripeCustomerId,
+                Status = "all",
+                Limit = 5,
+            });
+
+            // Find the most recent active or trialing Stripe subscription
+            var activeSub = stripeSubs.Data
+                .Where(s => s.Status is "active" or "trialing")
+                .OrderByDescending(s => s.Created)
+                .FirstOrDefault();
+
+            if (activeSub == null) return null;
+
+            // Check if we already have this subscription locally
+            var existing = await db.Subscriptions
+                .Include(s => s.Plan)
+                .FirstOrDefaultAsync(s => s.StripeSubscriptionId == activeSub.Id);
+
+            if (existing != null)
+            {
+                // Update status in case it drifted
+                existing.Status = MapStatus(activeSub.Status);
+                existing.CurrentPeriodStart = activeSub.CurrentPeriodStart;
+                existing.CurrentPeriodEnd = activeSub.CurrentPeriodEnd;
+                existing.TrialEndsAt = activeSub.TrialEnd;
+                existing.CanceledAt = activeSub.CanceledAt;
+                await db.SaveChangesAsync();
+                return existing;
+            }
+
+            // We don't have this subscription locally — create it.
+            // Match the Stripe price to a local plan.
+            var priceId = activeSub.Items.Data.FirstOrDefault()?.Price?.Id;
+            var plan = !string.IsNullOrEmpty(priceId)
+                ? await db.Plans.FirstOrDefaultAsync(p => p.StripePriceId == priceId)
+                : null;
+
+            // Also check metadata for planId (set by our checkout flow)
+            if (plan == null && activeSub.Metadata.TryGetValue("planId", out var planIdStr)
+                && int.TryParse(planIdStr, out var planId))
+            {
+                plan = await db.Plans.FindAsync(planId);
+            }
+
+            if (plan == null) return null; // Can't map to a local plan
+
+            // Cancel any local-only trials
+            var localTrials = await db.Subscriptions
+                .Where(s => s.CompanyId == companyId
+                    && s.StripeSubscriptionId == null
+                    && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
+                .ToListAsync();
+            foreach (var trial in localTrials)
+            {
+                trial.Status = SubscriptionStatus.Canceled;
+                trial.CanceledAt = DateTime.UtcNow;
+            }
+
+            var newSub = new Core.Entities.Subscription
+            {
+                CompanyId = companyId,
+                PlanId = plan.Id,
+                Status = MapStatus(activeSub.Status),
+                StripeSubscriptionId = activeSub.Id,
+                StripeCustomerId = stripeCustomerId,
+                CurrentPeriodStart = activeSub.CurrentPeriodStart,
+                CurrentPeriodEnd = activeSub.CurrentPeriodEnd,
+                TrialEndsAt = activeSub.TrialEnd,
+            };
+            db.Subscriptions.Add(newSub);
+            await db.SaveChangesAsync();
+
+            // Reload with Plan navigation property
+            await db.Entry(newSub).Reference(s => s.Plan).LoadAsync();
+            return newSub;
+        }
+        catch
+        {
+            // Don't let Stripe API errors break the billing page
+            return null;
+        }
     }
 
     public async Task<SubscriptionResult?> VerifyCheckoutSessionAsync(int companyId, string sessionId)
