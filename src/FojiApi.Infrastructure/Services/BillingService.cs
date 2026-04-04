@@ -147,7 +147,8 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
             sub.Id,
             sub.Status.ToString().ToLower(),
             new SubscriptionPlanResult(sub.Plan.Id, sub.Plan.Name, sub.Plan.MaxAgents, sub.Plan.HasWhatsApp, sub.Plan.HasEscalationContacts, sub.Plan.MaxConversationsPerMonth, sub.Plan.MaxMessagesPerMonth),
-            sub.CurrentPeriodStart, sub.CurrentPeriodEnd, sub.TrialEndsAt, sub.CanceledAt);
+            sub.CurrentPeriodStart, sub.CurrentPeriodEnd, sub.TrialEndsAt, sub.CanceledAt,
+            !string.IsNullOrEmpty(sub.StripeSubscriptionId));
     }
 
     public async Task<SubscriptionResult?> VerifyCheckoutSessionAsync(int companyId, string sessionId)
