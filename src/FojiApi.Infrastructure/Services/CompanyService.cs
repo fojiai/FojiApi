@@ -50,6 +50,26 @@ public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailServ
         };
         db.UserCompanies.Add(userCompany);
 
+        // Create a trial subscription defaulting to the cheapest public plan
+        var basePlan = await db.Plans
+            .Where(p => p.IsActive && p.IsPublic && p.CustomForCompanyId == null)
+            .OrderBy(p => p.MonthlyPrice)
+            .FirstOrDefaultAsync();
+
+        if (basePlan != null)
+        {
+            var trialDays = basePlan.TrialDays > 0 ? basePlan.TrialDays : 15;
+            db.Subscriptions.Add(new Subscription
+            {
+                Company = company,
+                PlanId = basePlan.Id,
+                Status = SubscriptionStatus.Trialing,
+                CurrentPeriodStart = DateTime.UtcNow,
+                CurrentPeriodEnd = DateTime.UtcNow.AddDays(trialDays),
+                TrialEndsAt = DateTime.UtcNow.AddDays(trialDays)
+            });
+        }
+
         await db.SaveChangesAsync();
 
         var newToken = jwtService.GenerateToken(user, user.UserCompanies.Where(uc => uc.IsActive));

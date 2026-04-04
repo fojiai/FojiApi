@@ -5,6 +5,7 @@ public interface IBillingService
     Task<string> CreateCheckoutSessionAsync(int companyId, int planId, int userId);
     Task<string> CreateCustomerPortalSessionAsync(int companyId);
     Task<SubscriptionResult?> GetSubscriptionAsync(int companyId);
+    Task<SubscriptionResult?> VerifyCheckoutSessionAsync(int companyId, string sessionId);
     Task HandleWebhookAsync(string payload, string signature);
 }
 

@@ -150,6 +150,40 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
             sub.CurrentPeriodStart, sub.CurrentPeriodEnd, sub.TrialEndsAt, sub.CanceledAt);
     }
 
+    public async Task<SubscriptionResult?> VerifyCheckoutSessionAsync(int companyId, string sessionId)
+    {
+        StripeConfiguration.ApiKey = SecretKey;
+
+        Session session;
+        try
+        {
+            session = await new SessionService().GetAsync(sessionId);
+        }
+        catch
+        {
+            return await GetSubscriptionAsync(companyId);
+        }
+
+        // Only process if the session belongs to this company
+        if (!session.Metadata.TryGetValue("companyId", out var cid) || cid != companyId.ToString())
+            return await GetSubscriptionAsync(companyId);
+
+        // If session is complete and has a subscription, ensure we have it locally
+        if (session.Status == "complete" && !string.IsNullOrEmpty(session.SubscriptionId))
+        {
+            var existing = await db.Subscriptions
+                .FirstOrDefaultAsync(s => s.StripeSubscriptionId == session.SubscriptionId);
+
+            if (existing == null)
+            {
+                // Webhook hasn't arrived yet — process the checkout now
+                await HandleCheckoutCompletedAsync(session);
+            }
+        }
+
+        return await GetSubscriptionAsync(companyId);
+    }
+
     public async Task HandleWebhookAsync(string payload, string signature)
     {
         StripeConfiguration.ApiKey = SecretKey;

@@ -32,6 +32,13 @@ public class SubscriptionsController(IBillingService billingService, ICurrentUse
         return Ok(await billingService.GetSubscriptionAsync(companyId));
     }
 
+    [HttpGet("verify-session")]
+    public async Task<IActionResult> VerifyCheckoutSession([FromQuery] int companyId, [FromQuery] string sessionId)
+    {
+        EnsureOwner(companyId);
+        return Ok(await billingService.VerifyCheckoutSessionAsync(companyId, sessionId));
+    }
+
     [HttpPost("webhook")]
     [AllowAnonymous]
     public async Task<IActionResult> Webhook()
