@@ -40,7 +40,10 @@ public class AgentService(
             agent.Files.Select(f => new AgentFileItem(
                 f.Id, f.FileName, f.FileSizeBytes, f.ProcessingStatus.ToString(), f.CreatedAt)),
             agent.SupportWhatsAppNumber, agent.SalesWhatsAppNumber,
-            agent.SupportEmail, agent.SalesEmail
+            agent.SupportEmail, agent.SalesEmail,
+            agent.WelcomeMessage, agent.ConversationStarters,
+            agent.WidgetPrimaryColor, agent.WidgetTitle,
+            agent.WidgetPlaceholder, agent.WidgetPosition
         );
     }
 
@@ -81,7 +84,9 @@ public class AgentService(
     public async Task<AgentUpdatedResult> UpdateAgentAsync(
         int agentId, string? name, string? description, string? userPrompt,
         bool? isActive, string? agentLanguage, bool? whatsAppEnabled, string? whatsAppPhoneNumberId,
-        string? supportWhatsAppNumber, string? salesWhatsAppNumber, string? supportEmail, string? salesEmail)
+        string? supportWhatsAppNumber, string? salesWhatsAppNumber, string? supportEmail, string? salesEmail,
+        string? welcomeMessage, string? conversationStarters,
+        string? widgetPrimaryColor, string? widgetTitle, string? widgetPlaceholder, string? widgetPosition)
     {
         var agent = await db.Agents.FindAsync(agentId)
             ?? throw new NotFoundException("Agent not found.");
@@ -122,6 +127,20 @@ public class AgentService(
             agent.SupportEmail = supportEmail.Trim().Length > 0 ? supportEmail.Trim() : null;
         if (salesEmail != null)
             agent.SalesEmail = salesEmail.Trim().Length > 0 ? salesEmail.Trim() : null;
+
+        // Widget customization
+        if (welcomeMessage != null)
+            agent.WelcomeMessage = welcomeMessage.Trim().Length > 0 ? welcomeMessage.Trim() : null;
+        if (conversationStarters != null)
+            agent.ConversationStarters = conversationStarters.Trim().Length > 0 ? conversationStarters.Trim() : null;
+        if (widgetPrimaryColor != null)
+            agent.WidgetPrimaryColor = widgetPrimaryColor.Trim().Length > 0 ? widgetPrimaryColor.Trim() : null;
+        if (widgetTitle != null)
+            agent.WidgetTitle = widgetTitle.Trim().Length > 0 ? widgetTitle.Trim() : null;
+        if (widgetPlaceholder != null)
+            agent.WidgetPlaceholder = widgetPlaceholder.Trim().Length > 0 ? widgetPlaceholder.Trim() : null;
+        if (widgetPosition != null)
+            agent.WidgetPosition = widgetPosition.Trim().Length > 0 ? widgetPosition.Trim() : null;
 
         await db.SaveChangesAsync();
         return new AgentUpdatedResult(agent.Id, agent.Name, agent.IsActive, agent.UpdatedAt);

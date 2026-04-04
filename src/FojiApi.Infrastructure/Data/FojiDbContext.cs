@@ -70,6 +70,12 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.Property(a => a.AgentToken).HasMaxLength(64).IsRequired();
             e.Property(a => a.IndustryType).HasConversion<string>().HasMaxLength(30);
             e.Property(a => a.AgentLanguage).HasConversion<string>().HasMaxLength(10);
+            e.Property(a => a.WelcomeMessage).HasMaxLength(500);
+            e.Property(a => a.ConversationStarters).HasMaxLength(2000);
+            e.Property(a => a.WidgetPrimaryColor).HasMaxLength(9);
+            e.Property(a => a.WidgetTitle).HasMaxLength(100);
+            e.Property(a => a.WidgetPlaceholder).HasMaxLength(200);
+            e.Property(a => a.WidgetPosition).HasMaxLength(10);
             e.HasOne(a => a.Company).WithMany(c => c.Agents).HasForeignKey(a => a.CompanyId).OnDelete(DeleteBehavior.Cascade);
         });
 

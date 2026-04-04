@@ -23,6 +23,14 @@ public class Agent : BaseEntity
     public string? SupportEmail { get; set; }
     public string? SalesEmail { get; set; }
 
+    // Widget customization
+    public string? WelcomeMessage { get; set; }
+    public string? ConversationStarters { get; set; } // JSON array: ["q1","q2","q3","q4"]
+    public string? WidgetPrimaryColor { get; set; }
+    public string? WidgetTitle { get; set; }
+    public string? WidgetPlaceholder { get; set; }
+    public string? WidgetPosition { get; set; } // "left" or "right"
+
     // Navigation
     public Company Company { get; set; } = null!;
     public ICollection<AgentFile> Files { get; set; } = [];

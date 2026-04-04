@@ -35,7 +35,7 @@ public class AgentsController(IAgentService agentService, ICurrentUserService cu
     {
         var existing = await agentService.GetAgentAsync(id);
         EnsureCompanyAccess(existing.CompanyId, CompanyRole.Admin);
-        return Ok(await agentService.UpdateAgentAsync(id, req.Name, req.Description, req.UserPrompt, req.IsActive, req.AgentLanguage, req.WhatsAppEnabled, req.WhatsAppPhoneNumberId, req.SupportWhatsAppNumber, req.SalesWhatsAppNumber, req.SupportEmail, req.SalesEmail));
+        return Ok(await agentService.UpdateAgentAsync(id, req.Name, req.Description, req.UserPrompt, req.IsActive, req.AgentLanguage, req.WhatsAppEnabled, req.WhatsAppPhoneNumberId, req.SupportWhatsAppNumber, req.SalesWhatsAppNumber, req.SupportEmail, req.SalesEmail, req.WelcomeMessage, req.ConversationStarters, req.WidgetPrimaryColor, req.WidgetTitle, req.WidgetPlaceholder, req.WidgetPosition));
     }
 
     [HttpDelete("{id:int}")]
@@ -123,5 +123,23 @@ public record UpdateAgentRequest(
 
     [param: System.ComponentModel.DataAnnotations.EmailAddress]
     [param: System.ComponentModel.DataAnnotations.StringLength(254)]
-    string? SalesEmail
+    string? SalesEmail,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(500)]
+    string? WelcomeMessage,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(2000)]
+    string? ConversationStarters,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(9)]
+    string? WidgetPrimaryColor,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(100)]
+    string? WidgetTitle,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(200)]
+    string? WidgetPlaceholder,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(10)]
+    string? WidgetPosition
 );
