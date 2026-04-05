@@ -98,8 +98,8 @@ public class AgentService(
 
         if (agentLanguage != null)
         {
-            if (!Enum.TryParse<AgentLanguage>(agentLanguage, true, out var lang))
-                throw new DomainException($"Invalid agent language: {agentLanguage}. Valid values: PtBr, En, Es.");
+            if (!Enum.TryParse<AgentLanguage>(agentLanguage.Replace("-", ""), true, out var lang))
+                throw new DomainException($"Invalid agent language: {agentLanguage}. Valid values: pt-br, en, es.");
             agent.AgentLanguage = lang;
         }
 
