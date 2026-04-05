@@ -42,7 +42,26 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
         // so the user can review and confirm the plan change themselves.
         if (existingSub != null && !string.IsNullOrEmpty(existingSub.StripeSubscriptionId))
         {
-            if (existingSub.PlanId == planId)
+            // Fetch the actual Stripe subscription to check the real current price
+            var stripeSub = await new SubscriptionService().GetAsync(existingSub.StripeSubscriptionId!);
+            var currentPriceId = stripeSub.Items.Data.FirstOrDefault()?.Price?.Id;
+
+            // Sync local DB if it drifted from Stripe
+            if (currentPriceId != null && currentPriceId != existingSub.Plan.StripePriceId)
+            {
+                var actualPlan = await db.Plans.FirstOrDefaultAsync(p => p.StripePriceId == currentPriceId);
+                if (actualPlan != null)
+                {
+                    existingSub.PlanId = actualPlan.Id;
+                    existingSub.Status = MapStatus(stripeSub.Status);
+                    existingSub.CurrentPeriodStart = stripeSub.CurrentPeriodStart;
+                    existingSub.CurrentPeriodEnd = stripeSub.CurrentPeriodEnd;
+                    await db.SaveChangesAsync();
+                }
+            }
+
+            // Now check against the real Stripe price, not just local DB
+            if (currentPriceId == plan.StripePriceId)
                 throw new DomainException("You are already on this plan.");
 
             var portalSession = await new Stripe.BillingPortal.SessionService().CreateAsync(
@@ -60,8 +79,7 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
                             [
                                 new Stripe.BillingPortal.SessionFlowDataSubscriptionUpdateConfirmItemOptions
                                 {
-                                    Id = (await new SubscriptionService().GetAsync(existingSub.StripeSubscriptionId!))
-                                        .Items.Data.First().Id,
+                                    Id = stripeSub.Items.Data.First().Id,
                                     Price = plan.StripePriceId,
                                     Quantity = 1,
                                 }
