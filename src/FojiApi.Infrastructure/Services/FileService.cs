@@ -7,6 +7,7 @@ using FojiApi.Core.Interfaces.Services;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace FojiApi.Infrastructure.Services;
@@ -16,7 +17,8 @@ public class FileService(
     IStorageService storageService,
     IPlanEnforcementService planEnforcement,
     IAmazonSQS sqsClient,
-    IConfiguration configuration) : IFileService
+    IConfiguration configuration,
+    ILogger<FileService> logger) : IFileService
 {
     private readonly string _sqsQueueUrl = configuration["AWS:SqsFileExtractionQueueUrl"] ?? string.Empty;
 
@@ -63,11 +65,18 @@ public class FileService(
 
         if (!string.IsNullOrEmpty(_sqsQueueUrl))
         {
-            await sqsClient.SendMessageAsync(new SendMessageRequest
+            try
             {
-                QueueUrl = _sqsQueueUrl,
-                MessageBody = JsonSerializer.Serialize(new { job = "extract_file", agentFileId = agentFile.Id })
-            });
+                await sqsClient.SendMessageAsync(new SendMessageRequest
+                {
+                    QueueUrl = _sqsQueueUrl,
+                    MessageBody = JsonSerializer.Serialize(new { job = "extract_file", agentFileId = agentFile.Id })
+                });
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to enqueue file extraction for AgentFile {AgentFileId}. File was saved but extraction will not start automatically.", agentFile.Id);
+            }
         }
 
         return new FileUploadResult(agentFile.Id, agentFile.FileName, agentFile.FileSizeBytes, agentFile.ProcessingStatus.ToString(), agentFile.CreatedAt);
