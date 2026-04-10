@@ -95,10 +95,7 @@ jobs:
           max-task-count: 8
           auto-scaling-metric: AVERAGE_CPU
           auto-scaling-target-value: 70
-          environment-variables: |
-            ASPNETCORE_ENVIRONMENT=Production
-            AWS_SSM_PREFIX=/foji/prod/
-            AWS_REGION=us-east-1
+          environment-variables: '[{"name":"ASPNETCORE_ENVIRONMENT","value":"Production"},{"name":"AWS_SSM_PREFIX","value":"/foji/prod/"},{"name":"AWS_REGION","value":"us-east-1"}]'
 
       - name: Summary
         run: |
