@@ -70,7 +70,7 @@ public class FileService(
                 await sqsClient.SendMessageAsync(new SendMessageRequest
                 {
                     QueueUrl = _sqsQueueUrl,
-                    MessageBody = JsonSerializer.Serialize(new { job = "extract_file", agentFileId = agentFile.Id })
+                    MessageBody = JsonSerializer.Serialize(new { job = "extract_file", agent_file_id = agentFile.Id })
                 });
             }
             catch (Exception ex)
