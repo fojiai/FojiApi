@@ -3,6 +3,7 @@ using System;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace FojiApi.Infrastructure.Migrations
 {
     [DbContext(typeof(FojiDbContext))]
-    partial class FojiDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260418042047_AddHandoffEventAndAgentHandoffFields")]
+    partial class AddHandoffEventAndAgentHandoffFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -202,48 +205,6 @@ namespace FojiApi.Infrastructure.Migrations
                     b.HasIndex("CompanyId");
 
                     b.ToTable("Agents");
-                });
-
-            modelBuilder.Entity("FojiApi.Core.Entities.AgentCalendarConnection", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AgentId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("ConnectedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("EncryptedRefreshToken")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("GoogleAccountEmail")
-                        .IsRequired()
-                        .HasMaxLength(254)
-                        .HasColumnType("character varying(254)");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true);
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AgentId")
-                        .IsUnique();
-
-                    b.ToTable("AgentCalendarConnections");
                 });
 
             modelBuilder.Entity("FojiApi.Core.Entities.AgentFile", b =>
@@ -706,9 +667,6 @@ namespace FojiApi.Infrastructure.Migrations
                     b.Property<bool>("HasEscalationContacts")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("HasGoogleCalendar")
-                        .HasColumnType("boolean");
-
                     b.Property<bool>("HasWhatsApp")
                         .HasColumnType("boolean");
 
@@ -1017,17 +975,6 @@ namespace FojiApi.Infrastructure.Migrations
                     b.Navigation("Company");
                 });
 
-            modelBuilder.Entity("FojiApi.Core.Entities.AgentCalendarConnection", b =>
-                {
-                    b.HasOne("FojiApi.Core.Entities.Agent", "Agent")
-                        .WithOne("CalendarConnection")
-                        .HasForeignKey("FojiApi.Core.Entities.AgentCalendarConnection", "AgentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Agent");
-                });
-
             modelBuilder.Entity("FojiApi.Core.Entities.AgentFile", b =>
                 {
                     b.HasOne("FojiApi.Core.Entities.Agent", "Agent")
@@ -1203,8 +1150,6 @@ namespace FojiApi.Infrastructure.Migrations
 
             modelBuilder.Entity("FojiApi.Core.Entities.Agent", b =>
                 {
-                    b.Navigation("CalendarConnection");
-
                     b.Navigation("Files");
 
                     b.Navigation("Leads");

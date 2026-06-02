@@ -35,7 +35,7 @@ public class AgentsController(IAgentService agentService, ICurrentUserService cu
     {
         var existing = await agentService.GetAgentAsync(id);
         EnsureCompanyAccess(existing.CompanyId, CompanyRole.Admin);
-        return Ok(await agentService.UpdateAgentAsync(id, req.Name, req.Description, req.UserPrompt, req.IsActive, req.AgentLanguage, req.WhatsAppEnabled, req.WhatsAppPhoneNumberId, req.SupportWhatsAppNumber, req.SalesWhatsAppNumber, req.SupportEmail, req.SalesEmail, req.WelcomeMessage, req.ConversationStarters, req.WidgetPrimaryColor, req.WidgetTitle, req.WidgetPlaceholder, req.WidgetPosition));
+        return Ok(await agentService.UpdateAgentAsync(id, req.Name, req.Description, req.UserPrompt, req.IsActive, req.AgentLanguage, req.WhatsAppEnabled, req.WhatsAppPhoneNumberId, req.SupportWhatsAppNumber, req.SalesWhatsAppNumber, req.SupportEmail, req.SalesEmail, req.WelcomeMessage, req.ConversationStarters, req.WidgetPrimaryColor, req.WidgetTitle, req.WidgetPlaceholder, req.WidgetPosition, req.ResponseStyle, req.LeadCaptureEnabled, req.LeadCapturePrompt, req.HandoffEnabled, req.HandoffNotifyEmail, req.HandoffNotifyWhatsApp, req.HandoffMessage));
     }
 
     [HttpDelete("{id:int}")]
@@ -141,5 +141,23 @@ public record UpdateAgentRequest(
     string? WidgetPlaceholder,
 
     [param: System.ComponentModel.DataAnnotations.StringLength(10)]
-    string? WidgetPosition
+    string? WidgetPosition,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(20)]
+    string? ResponseStyle,
+    bool? LeadCaptureEnabled,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(500)]
+    string? LeadCapturePrompt,
+    bool? HandoffEnabled,
+
+    [param: System.ComponentModel.DataAnnotations.EmailAddress]
+    [param: System.ComponentModel.DataAnnotations.StringLength(254)]
+    string? HandoffNotifyEmail,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(30)]
+    string? HandoffNotifyWhatsApp,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(500)]
+    string? HandoffMessage
 );

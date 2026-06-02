@@ -39,4 +39,6 @@ public class Company : BaseEntity
     public ICollection<Invitation> Invitations { get; set; } = [];
     public ICollection<AuditLog> AuditLogs { get; set; } = [];
     public ICollection<DailyStat> DailyStats { get; set; } = [];
+    public ICollection<Lead> Leads { get; set; } = [];
+    public ICollection<HandoffEvent> HandoffEvents { get; set; } = [];
 }

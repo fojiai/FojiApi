@@ -36,6 +36,9 @@ public static class DependencyInjection
         });
         services.AddTransient<IResend, ResendClient>();
 
+        // HTTP client for Google OAuth calls
+        services.AddHttpClient("GoogleOAuth");
+
         // Infrastructure services
         services.AddScoped<IJwtService, JwtService>();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
@@ -43,6 +46,8 @@ public static class DependencyInjection
         services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();
         services.AddScoped<IStorageService, S3StorageService>();
         services.AddScoped<IEmailService, EmailService>();
+        services.AddSingleton<IEncryptionService, EncryptionService>();
+        services.AddScoped<ICalendarConnectionService, CalendarConnectionService>();
 
         // Application services
         services.AddScoped<IAuthService, AuthService>();
@@ -61,6 +66,8 @@ public static class DependencyInjection
         services.AddScoped<IPlatformSettingService, PlatformSettingService>();
         services.AddScoped<IWhatsAppWebhookService, WhatsAppWebhookService>();
         services.AddScoped<ITrialExpiryService, TrialExpiryService>();
+        services.AddScoped<ILeadService, LeadService>();
+        services.AddScoped<IHandoffService, HandoffService>();
 
         // Daily background job for trial expiry checks and reminder emails
         services.AddHostedService<TrialExpiryHostedService>();

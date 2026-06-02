@@ -178,6 +178,25 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
             """);
     }
 
+    public async Task SendHandoffNotificationAsync(string toEmail, string agentName, string companyName, string sessionId, string? userMessage)
+    {
+        var msgBlock = userMessage != null
+            ? $"""<p style="color:#333;"><strong>Última mensagem do usuário:</strong></p><div style="background:#f9f9f9;border:1px solid #eee;border-radius:8px;padding:12px;margin:8px 0;font-style:italic;">{System.Net.WebUtility.HtmlEncode(userMessage)}</div>"""
+            : "";
+
+        await SendAsync(toEmail, $"[Foji AI] Solicitação de atendimento humano — {agentName}", $"""
+            <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
+              <h2 style="color:#111;">Solicitação de Atendimento Humano</h2>
+              <p>Um visitante solicitou falar com um humano através do agente <strong>{agentName}</strong> ({companyName}).</p>
+              {msgBlock}
+              <p style="color:#666;font-size:13px;">Sessão: <code>{sessionId}</code></p>
+              <p style="color:#666;font-size:13px;">Acesse seu painel para ver o histórico completo da conversa.</p>
+              <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
+              <p style="color:#999;font-size:12px;">Foji AI — Forje sua inteligência</p>
+            </div>
+            """);
+    }
+
     private async Task SendAsync(string toEmail, string subject, string html)
     {
         var message = new EmailMessage

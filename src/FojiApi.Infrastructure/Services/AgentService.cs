@@ -28,8 +28,13 @@ public class AgentService(
 
     public async Task<AgentDetail> GetAgentAsync(int agentId)
     {
-        var agent = await db.Agents.Include(a => a.Files).FirstOrDefaultAsync(a => a.Id == agentId)
+        var agent = await db.Agents
+            .Include(a => a.Files)
+            .Include(a => a.CalendarConnection)
+            .FirstOrDefaultAsync(a => a.Id == agentId)
             ?? throw new NotFoundException("Agent not found.");
+
+        var calendarActive = agent.CalendarConnection is { IsActive: true };
 
         return new AgentDetail(
             agent.Id, agent.Name, agent.Description, agent.IsActive,
@@ -43,7 +48,13 @@ public class AgentService(
             agent.SupportEmail, agent.SalesEmail,
             agent.WelcomeMessage, agent.ConversationStarters,
             agent.WidgetPrimaryColor, agent.WidgetTitle,
-            agent.WidgetPlaceholder, agent.WidgetPosition
+            agent.WidgetPlaceholder, agent.WidgetPosition,
+            agent.ResponseStyle,
+            agent.LeadCaptureEnabled, agent.LeadCapturePrompt,
+            agent.HandoffEnabled, agent.HandoffNotifyEmail,
+            agent.HandoffNotifyWhatsApp, agent.HandoffMessage,
+            calendarActive,
+            calendarActive ? agent.CalendarConnection!.GoogleAccountEmail : null
         );
     }
 
@@ -86,7 +97,9 @@ public class AgentService(
         bool? isActive, string? agentLanguage, bool? whatsAppEnabled, string? whatsAppPhoneNumberId,
         string? supportWhatsAppNumber, string? salesWhatsAppNumber, string? supportEmail, string? salesEmail,
         string? welcomeMessage, string? conversationStarters,
-        string? widgetPrimaryColor, string? widgetTitle, string? widgetPlaceholder, string? widgetPosition)
+        string? widgetPrimaryColor, string? widgetTitle, string? widgetPlaceholder, string? widgetPosition,
+        string? responseStyle, bool? leadCaptureEnabled, string? leadCapturePrompt,
+        bool? handoffEnabled, string? handoffNotifyEmail, string? handoffNotifyWhatsApp, string? handoffMessage)
     {
         var agent = await db.Agents.FindAsync(agentId)
             ?? throw new NotFoundException("Agent not found.");
@@ -141,6 +154,26 @@ public class AgentService(
             agent.WidgetPlaceholder = widgetPlaceholder.Trim().Length > 0 ? widgetPlaceholder.Trim() : null;
         if (widgetPosition != null)
             agent.WidgetPosition = widgetPosition.Trim().Length > 0 ? widgetPosition.Trim() : null;
+
+        if (responseStyle != null)
+        {
+            var valid = new[] { "Professional", "Friendly", "Concise" };
+            if (!valid.Contains(responseStyle))
+                throw new DomainException($"Invalid response style: {responseStyle}. Valid values: Professional, Friendly, Concise.");
+            agent.ResponseStyle = responseStyle;
+        }
+
+        if (leadCaptureEnabled.HasValue) agent.LeadCaptureEnabled = leadCaptureEnabled.Value;
+        if (leadCapturePrompt != null)
+            agent.LeadCapturePrompt = leadCapturePrompt.Trim().Length > 0 ? leadCapturePrompt.Trim() : null;
+
+        if (handoffEnabled.HasValue) agent.HandoffEnabled = handoffEnabled.Value;
+        if (handoffNotifyEmail != null)
+            agent.HandoffNotifyEmail = handoffNotifyEmail.Trim().Length > 0 ? handoffNotifyEmail.Trim() : null;
+        if (handoffNotifyWhatsApp != null)
+            agent.HandoffNotifyWhatsApp = handoffNotifyWhatsApp.Trim().Length > 0 ? handoffNotifyWhatsApp.Trim() : null;
+        if (handoffMessage != null)
+            agent.HandoffMessage = handoffMessage.Trim().Length > 0 ? handoffMessage.Trim() : null;
 
         await db.SaveChangesAsync();
         return new AgentUpdatedResult(agent.Id, agent.Name, agent.IsActive, agent.UpdatedAt);

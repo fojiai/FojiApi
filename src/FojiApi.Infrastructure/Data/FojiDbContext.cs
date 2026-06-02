@@ -20,6 +20,9 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
     public DbSet<DailyStat> DailyStats => Set<DailyStat>();
     public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
     public DbSet<ContactSubmission> ContactSubmissions => Set<ContactSubmission>();
+    public DbSet<Lead> Leads => Set<Lead>();
+    public DbSet<HandoffEvent> HandoffEvents => Set<HandoffEvent>();
+    public DbSet<AgentCalendarConnection> AgentCalendarConnections => Set<AgentCalendarConnection>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -76,6 +79,11 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.Property(a => a.WidgetTitle).HasMaxLength(100);
             e.Property(a => a.WidgetPlaceholder).HasMaxLength(200);
             e.Property(a => a.WidgetPosition).HasMaxLength(10);
+            e.Property(a => a.ResponseStyle).HasMaxLength(20);
+            e.Property(a => a.LeadCapturePrompt).HasMaxLength(500);
+            e.Property(a => a.HandoffNotifyEmail).HasMaxLength(254);
+            e.Property(a => a.HandoffNotifyWhatsApp).HasMaxLength(30);
+            e.Property(a => a.HandoffMessage).HasMaxLength(500);
             e.HasOne(a => a.Company).WithMany(c => c.Agents).HasForeignKey(a => a.CompanyId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -181,6 +189,34 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.Property(s => s.Category).HasMaxLength(50);
         });
 
+        // Lead
+        modelBuilder.Entity<Lead>(e =>
+        {
+            e.HasKey(l => l.Id);
+            e.HasIndex(l => new { l.CompanyId, l.CreatedAt });
+            e.HasIndex(l => l.SessionId);
+            e.Property(l => l.Name).HasMaxLength(200);
+            e.Property(l => l.Email).HasMaxLength(254);
+            e.Property(l => l.Phone).HasMaxLength(30);
+            e.Property(l => l.SessionId).HasMaxLength(64).IsRequired();
+            e.Property(l => l.Source).HasMaxLength(20).HasDefaultValue("widget");
+            e.HasOne(l => l.Agent).WithMany(a => a.Leads).HasForeignKey(l => l.AgentId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(l => l.Company).WithMany(c => c.Leads).HasForeignKey(l => l.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // HandoffEvent
+        modelBuilder.Entity<HandoffEvent>(e =>
+        {
+            e.HasKey(h => h.Id);
+            e.HasIndex(h => new { h.CompanyId, h.CreatedAt });
+            e.HasIndex(h => h.SessionId);
+            e.Property(h => h.SessionId).HasMaxLength(64).IsRequired();
+            e.Property(h => h.UserMessage).HasMaxLength(2000);
+            e.Property(h => h.Source).HasMaxLength(20).HasDefaultValue("widget");
+            e.HasOne(h => h.Agent).WithMany().HasForeignKey(h => h.AgentId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(h => h.Company).WithMany(c => c.HandoffEvents).HasForeignKey(h => h.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        });
+
         // ContactSubmission
         modelBuilder.Entity<ContactSubmission>(e =>
         {
@@ -192,6 +228,19 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.Property(c => c.Message).HasMaxLength(5000);
             e.Property(c => c.AdminNotes).HasMaxLength(2000);
             e.HasOne(c => c.User).WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // AgentCalendarConnection
+        modelBuilder.Entity<AgentCalendarConnection>(e =>
+        {
+            e.HasKey(c => c.Id);
+            e.HasIndex(c => c.AgentId).IsUnique();
+            e.Property(c => c.GoogleAccountEmail).HasMaxLength(254).IsRequired();
+            e.Property(c => c.EncryptedRefreshToken).IsRequired();
+            e.Property(c => c.IsActive).HasDefaultValue(true);
+            e.HasOne(c => c.Agent).WithOne(a => a.CalendarConnection)
+                .HasForeignKey<AgentCalendarConnection>(c => c.AgentId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // AuditLog

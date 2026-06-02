@@ -14,4 +14,7 @@ public interface IEmailService
     Task SendTrialEndingAsync(string toEmail, string firstName, string companyName, int daysLeft);
     Task SendPaymentFailedAsync(string toEmail, string firstName, string companyName);
     Task SendSubscriptionCancelledAsync(string toEmail, string firstName, string companyName);
+
+    // Human handoff notification
+    Task SendHandoffNotificationAsync(string toEmail, string agentName, string companyName, string sessionId, string? userMessage);
 }

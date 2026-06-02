@@ -41,6 +41,14 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
                 "Escalation contacts are available on the Professional and Scale plans. Please upgrade to enable this feature.");
     }
 
+    public async Task EnsureCanUseGoogleCalendarAsync(int companyId)
+    {
+        var plan = await GetActivePlanAsync(companyId);
+        if (plan == null || !plan.HasGoogleCalendar)
+            throw new DomainException(
+                "Google Calendar integration is not available on your current plan. Please upgrade to enable this feature.");
+    }
+
     public async Task EnsureCanInviteMemberAsync(int companyId)
     {
         var plan = await GetActivePlanAsync(companyId);

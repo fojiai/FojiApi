@@ -3,6 +3,7 @@ using System;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace FojiApi.Infrastructure.Migrations
 {
     [DbContext(typeof(FojiDbContext))]
-    partial class FojiDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260417154344_AddAgentResponseStyle")]
+    partial class AddAgentResponseStyle
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -107,21 +110,6 @@ namespace FojiApi.Infrastructure.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
-                    b.Property<bool>("HandoffEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("HandoffMessage")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("HandoffNotifyEmail")
-                        .HasMaxLength(254)
-                        .HasColumnType("character varying(254)");
-
-                    b.Property<string>("HandoffNotifyWhatsApp")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
                     b.Property<string>("IndustryType")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -129,13 +117,6 @@ namespace FojiApi.Infrastructure.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
-
-                    b.Property<bool>("LeadCaptureEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("LeadCapturePrompt")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -202,48 +183,6 @@ namespace FojiApi.Infrastructure.Migrations
                     b.HasIndex("CompanyId");
 
                     b.ToTable("Agents");
-                });
-
-            modelBuilder.Entity("FojiApi.Core.Entities.AgentCalendarConnection", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AgentId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("ConnectedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("EncryptedRefreshToken")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("GoogleAccountEmail")
-                        .IsRequired()
-                        .HasMaxLength(254)
-                        .HasColumnType("character varying(254)");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true);
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AgentId")
-                        .IsUnique();
-
-                    b.ToTable("AgentCalendarConnections");
                 });
 
             modelBuilder.Entity("FojiApi.Core.Entities.AgentFile", b =>
@@ -521,56 +460,6 @@ namespace FojiApi.Infrastructure.Migrations
                     b.ToTable("DailyStats");
                 });
 
-            modelBuilder.Entity("FojiApi.Core.Entities.HandoffEvent", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AgentId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("CompanyId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("NotificationSent")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("SessionId")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("widget");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("UserMessage")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AgentId");
-
-                    b.HasIndex("SessionId");
-
-                    b.HasIndex("CompanyId", "CreatedAt");
-
-                    b.ToTable("HandoffEvents");
-                });
-
             modelBuilder.Entity("FojiApi.Core.Entities.Invitation", b =>
                 {
                     b.Property<int>("Id")
@@ -624,61 +513,6 @@ namespace FojiApi.Infrastructure.Migrations
                     b.ToTable("Invitations");
                 });
 
-            modelBuilder.Entity("FojiApi.Core.Entities.Lead", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AgentId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("CompanyId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Email")
-                        .HasMaxLength(254)
-                        .HasColumnType("character varying(254)");
-
-                    b.Property<string>("Name")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Phone")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<string>("SessionId")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("widget");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AgentId");
-
-                    b.HasIndex("SessionId");
-
-                    b.HasIndex("CompanyId", "CreatedAt");
-
-                    b.ToTable("Leads");
-                });
-
             modelBuilder.Entity("FojiApi.Core.Entities.Plan", b =>
                 {
                     b.Property<int>("Id")
@@ -704,9 +538,6 @@ namespace FojiApi.Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.Property<bool>("HasEscalationContacts")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("HasGoogleCalendar")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("HasWhatsApp")
@@ -1017,17 +848,6 @@ namespace FojiApi.Infrastructure.Migrations
                     b.Navigation("Company");
                 });
 
-            modelBuilder.Entity("FojiApi.Core.Entities.AgentCalendarConnection", b =>
-                {
-                    b.HasOne("FojiApi.Core.Entities.Agent", "Agent")
-                        .WithOne("CalendarConnection")
-                        .HasForeignKey("FojiApi.Core.Entities.AgentCalendarConnection", "AgentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Agent");
-                });
-
             modelBuilder.Entity("FojiApi.Core.Entities.AgentFile", b =>
                 {
                     b.HasOne("FojiApi.Core.Entities.Agent", "Agent")
@@ -1078,25 +898,6 @@ namespace FojiApi.Infrastructure.Migrations
                     b.Navigation("Company");
                 });
 
-            modelBuilder.Entity("FojiApi.Core.Entities.HandoffEvent", b =>
-                {
-                    b.HasOne("FojiApi.Core.Entities.Agent", "Agent")
-                        .WithMany()
-                        .HasForeignKey("AgentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("FojiApi.Core.Entities.Company", "Company")
-                        .WithMany("HandoffEvents")
-                        .HasForeignKey("CompanyId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Agent");
-
-                    b.Navigation("Company");
-                });
-
             modelBuilder.Entity("FojiApi.Core.Entities.Invitation", b =>
                 {
                     b.HasOne("FojiApi.Core.Entities.Company", "Company")
@@ -1114,25 +915,6 @@ namespace FojiApi.Infrastructure.Migrations
                     b.Navigation("Company");
 
                     b.Navigation("InviterUser");
-                });
-
-            modelBuilder.Entity("FojiApi.Core.Entities.Lead", b =>
-                {
-                    b.HasOne("FojiApi.Core.Entities.Agent", "Agent")
-                        .WithMany("Leads")
-                        .HasForeignKey("AgentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("FojiApi.Core.Entities.Company", "Company")
-                        .WithMany("Leads")
-                        .HasForeignKey("CompanyId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Agent");
-
-                    b.Navigation("Company");
                 });
 
             modelBuilder.Entity("FojiApi.Core.Entities.Plan", b =>
@@ -1203,11 +985,7 @@ namespace FojiApi.Infrastructure.Migrations
 
             modelBuilder.Entity("FojiApi.Core.Entities.Agent", b =>
                 {
-                    b.Navigation("CalendarConnection");
-
                     b.Navigation("Files");
-
-                    b.Navigation("Leads");
                 });
 
             modelBuilder.Entity("FojiApi.Core.Entities.Company", b =>
@@ -1218,11 +996,7 @@ namespace FojiApi.Infrastructure.Migrations
 
                     b.Navigation("DailyStats");
 
-                    b.Navigation("HandoffEvents");
-
                     b.Navigation("Invitations");
-
-                    b.Navigation("Leads");
 
                     b.Navigation("Subscriptions");
 

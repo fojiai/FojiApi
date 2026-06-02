@@ -23,6 +23,9 @@ public class Agent : BaseEntity
     public string? SupportEmail { get; set; }
     public string? SalesEmail { get; set; }
 
+    // Response style — controls tone injected into system prompt
+    public string? ResponseStyle { get; set; } // "Professional" | "Friendly" | "Concise"
+
     // Widget customization
     public string? WelcomeMessage { get; set; }
     public string? ConversationStarters { get; set; } // JSON array: ["q1","q2","q3","q4"]
@@ -31,7 +34,19 @@ public class Agent : BaseEntity
     public string? WidgetPlaceholder { get; set; }
     public string? WidgetPosition { get; set; } // "left" or "right"
 
+    // Lead capture
+    public bool LeadCaptureEnabled { get; set; } = false;
+    public string? LeadCapturePrompt { get; set; } // Custom message shown above the lead form
+
+    // Human handoff
+    public bool HandoffEnabled { get; set; } = false;
+    public string? HandoffNotifyEmail { get; set; } // Email to notify when handoff is requested
+    public string? HandoffNotifyWhatsApp { get; set; } // WhatsApp number to notify when handoff is requested
+    public string? HandoffMessage { get; set; } // Custom message shown to user after requesting handoff
+
     // Navigation
     public Company Company { get; set; } = null!;
     public ICollection<AgentFile> Files { get; set; } = [];
+    public ICollection<Lead> Leads { get; set; } = [];
+    public AgentCalendarConnection? CalendarConnection { get; set; }
 }
