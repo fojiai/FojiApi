@@ -11,7 +11,8 @@ public enum IndustryType
 {
     AccountingFinance,
     Law,
-    InternalSystems
+    InternalSystems,
+    GeneralAssistant
 }
 
 public enum AgentLanguage
