@@ -1,4 +1,5 @@
 using FojiApi.Core.Entities;
+using FojiApi.Core.Enums;
 using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
 using FojiApi.Infrastructure.Data;
@@ -47,6 +48,28 @@ public class HandoffService(
             {
                 logger.LogWarning(ex, "Failed to send handoff email notification for agent {AgentId}", agentId);
             }
+        }
+
+        // CRM: create a high-priority follow-up task linked to the contact behind this session, if any.
+        var contactId = await db.Leads
+            .Where(l => l.SessionId == sessionId && l.CompanyId == agent.CompanyId && l.ContactId != null)
+            .OrderByDescending(l => l.CreatedAt)
+            .Select(l => l.ContactId)
+            .FirstOrDefaultAsync();
+
+        if (contactId != null)
+        {
+            db.CrmTasks.Add(new CrmTask
+            {
+                CompanyId = agent.CompanyId,
+                ContactId = contactId,
+                Title = "Follow up: human handoff requested",
+                Description = handoff.UserMessage,
+                Type = CrmTaskType.General,
+                Priority = CrmTaskPriority.High,
+                Status = CrmTaskStatus.Open,
+                DueAt = DateTime.UtcNow,
+            });
         }
 
         await db.SaveChangesAsync();

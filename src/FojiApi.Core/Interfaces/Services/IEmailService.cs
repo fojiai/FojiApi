@@ -17,4 +17,7 @@ public interface IEmailService
 
     // Human handoff notification
     Task SendHandoffNotificationAsync(string toEmail, string agentName, string companyName, string sessionId, string? userMessage);
+
+    /// <summary>Sends a free-form CRM email (proposal / follow-up). Body is plain text; newlines become paragraphs.</summary>
+    Task SendCrmEmailAsync(string toEmail, string subject, string body);
 }

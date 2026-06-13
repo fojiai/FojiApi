@@ -71,6 +71,9 @@ public static class DependencyInjection
         services.AddScoped<IContactService, ContactService>();
         services.AddScoped<IPipelineService, PipelineService>();
         services.AddScoped<IDealService, DealService>();
+        services.AddScoped<ICrmTaskService, CrmTaskService>();
+        services.AddScoped<IMeetingService, MeetingService>();
+        services.AddScoped<ICrmEmailService, CrmEmailService>();
 
         // Daily background job for trial expiry checks and reminder emails
         services.AddHostedService<TrialExpiryHostedService>();

@@ -44,6 +44,15 @@ public class ContactService(FojiDbContext db) : IContactService
         return new ContactCaptureResult(lead.Id, contact?.Id, sessionId);
     }
 
+    public async Task<int?> FindOrCreateContactAsync(int companyId, string? name, string? email, string? phone, string source)
+    {
+        var emailNorm = NormalizeEmail(email);
+        var phoneNorm = NormalizePhone(phone);
+        if (emailNorm == null && phoneNorm == null) return null;
+        var contact = await UpsertContactAsync(companyId, name, email, phone, emailNorm, phoneNorm, source);
+        return contact.Id;
+    }
+
     private async Task<Contact> UpsertContactAsync(
         int companyId, string? name, string? email, string? phone, string? emailNorm, string? phoneNorm, string source)
     {
@@ -228,6 +237,30 @@ public class ContactService(FojiDbContext db) : IContactService
                 items.Add(new TimelineItem(type, h.CreatedAt, $"Moved to {h.StageName}", h.StageName, h.DealId));
             }
         }
+
+        // Meetings.
+        var meetings = await db.Meetings
+            .Where(m => m.CompanyId == companyId && m.ContactId == contactId)
+            .Select(m => new { m.Id, m.Title, m.StartsAt })
+            .ToListAsync();
+        foreach (var m in meetings)
+            items.Add(new TimelineItem("meeting", m.StartsAt, "Meeting scheduled", m.Title, m.Id));
+
+        // Outbound emails.
+        var emails = await db.EmailLogs
+            .Where(e => e.CompanyId == companyId && e.ContactId == contactId)
+            .Select(e => new { e.Id, e.Subject, e.SentAt })
+            .ToListAsync();
+        foreach (var e in emails)
+            items.Add(new TimelineItem("email", e.SentAt, "Email sent", e.Subject, e.Id));
+
+        // Completed tasks.
+        var doneTasks = await db.CrmTasks
+            .Where(x => x.CompanyId == companyId && x.ContactId == contactId && x.Status == CrmTaskStatus.Done && x.CompletedAt != null)
+            .Select(x => new { x.Id, x.Title, x.CompletedAt })
+            .ToListAsync();
+        foreach (var x in doneTasks)
+            items.Add(new TimelineItem("task_done", x.CompletedAt!.Value, "Task completed", x.Title, x.Id));
 
         return items.OrderByDescending(i => i.Timestamp).ToList();
     }

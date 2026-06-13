@@ -29,6 +29,9 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
     public DbSet<PipelineStage> PipelineStages => Set<PipelineStage>();
     public DbSet<Deal> Deals => Set<Deal>();
     public DbSet<DealStageHistory> DealStageHistory => Set<DealStageHistory>();
+    public DbSet<CrmTask> CrmTasks => Set<CrmTask>();
+    public DbSet<Meeting> Meetings => Set<Meeting>();
+    public DbSet<EmailLog> EmailLogs => Set<EmailLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -343,6 +346,55 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.HasKey(h => h.Id);
             e.HasIndex(h => new { h.DealId, h.CreatedAt });
             e.HasOne(h => h.Deal).WithMany(d => d.StageHistory).HasForeignKey(h => h.DealId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // CrmTask
+        modelBuilder.Entity<CrmTask>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.CompanyId, x.Status, x.DueAt });
+            e.HasIndex(x => new { x.CompanyId, x.AssigneeUserId });
+            e.HasIndex(x => x.ContactId);
+            e.HasIndex(x => x.DealId);
+            e.Property(x => x.Title).HasMaxLength(200).IsRequired();
+            e.Property(x => x.Description).HasMaxLength(2000);
+            e.Property(x => x.Type).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.Priority).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            e.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Contact).WithMany().HasForeignKey(x => x.ContactId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.Deal).WithMany().HasForeignKey(x => x.DealId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.Assignee).WithMany().HasForeignKey(x => x.AssigneeUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // Meeting
+        modelBuilder.Entity<Meeting>(e =>
+        {
+            e.HasKey(m => m.Id);
+            e.HasIndex(m => new { m.CompanyId, m.StartsAt });
+            e.HasIndex(m => m.ContactId);
+            e.HasIndex(m => m.GoogleEventId);
+            e.Property(m => m.GoogleEventId).HasMaxLength(256).IsRequired();
+            e.Property(m => m.MeetLink).HasMaxLength(512);
+            e.Property(m => m.HtmlLink).HasMaxLength(512);
+            e.Property(m => m.Title).HasMaxLength(300).IsRequired();
+            e.Property(m => m.AttendeeEmail).HasMaxLength(254);
+            e.Property(m => m.AttendeeName).HasMaxLength(200);
+            e.HasOne(m => m.Company).WithMany().HasForeignKey(m => m.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(m => m.Contact).WithMany().HasForeignKey(m => m.ContactId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // EmailLog
+        modelBuilder.Entity<EmailLog>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.CompanyId, x.SentAt });
+            e.HasIndex(x => x.ContactId);
+            e.Property(x => x.ToEmail).HasMaxLength(254).IsRequired();
+            e.Property(x => x.Subject).HasMaxLength(300).IsRequired();
+            e.Property(x => x.Body).IsRequired();
+            e.HasOne(x => x.Company).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Contact).WithMany().HasForeignKey(x => x.ContactId).OnDelete(DeleteBehavior.SetNull);
         });
 
     }

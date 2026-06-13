@@ -11,6 +11,9 @@ public interface IContactService
     Task<ContactCaptureResult> CaptureLeadAndUpsertContactAsync(
         int agentId, string sessionId, string? name, string? email, string? phone, string source);
 
+    /// <summary>Find-or-create the deduped contact for an identity (no Lead created). Returns null if no email/phone.</summary>
+    Task<int?> FindOrCreateContactAsync(int companyId, string? name, string? email, string? phone, string source);
+
     Task<IEnumerable<ContactListItem>> GetContactsAsync(
         int companyId, int? ownerUserId = null, ContactStatus? status = null, string? tag = null, string? search = null);
 

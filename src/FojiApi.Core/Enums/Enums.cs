@@ -71,3 +71,26 @@ public enum DealStatus
     Won,
     Lost
 }
+
+/// <summary>Kind of CRM follow-up task.</summary>
+public enum CrmTaskType
+{
+    General,
+    Call,
+    Email,
+    WhatsApp,
+    Meeting
+}
+
+public enum CrmTaskPriority
+{
+    Low,
+    Normal,
+    High
+}
+
+public enum CrmTaskStatus
+{
+    Open,
+    Done
+}

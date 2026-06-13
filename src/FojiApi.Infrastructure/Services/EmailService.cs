@@ -197,6 +197,30 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
             """);
     }
 
+    public async Task SendCrmEmailAsync(string toEmail, string subject, string body)
+    {
+        var paragraphs = string.Join("", body
+            .Replace("\r\n", "\n")
+            .Split("\n\n", StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => $"<p style=\"margin:0 0 16px;\">{System.Net.WebUtility.HtmlEncode(p.Trim()).Replace("\n", "<br/>")}</p>"));
+
+        var html = $"""
+            <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#111;font-size:15px;line-height:1.6;">
+              {paragraphs}
+            </div>
+            """;
+
+        var message = new EmailMessage
+        {
+            From = _from,
+            Subject = subject,
+            HtmlBody = html,
+        };
+        message.To.Add(toEmail);
+
+        await resend.EmailSendAsync(message);
+    }
+
     private async Task SendAsync(string toEmail, string subject, string html)
     {
         var message = new EmailMessage
