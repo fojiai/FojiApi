@@ -23,6 +23,12 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
     public DbSet<Lead> Leads => Set<Lead>();
     public DbSet<HandoffEvent> HandoffEvents => Set<HandoffEvent>();
     public DbSet<AgentCalendarConnection> AgentCalendarConnections => Set<AgentCalendarConnection>();
+    public DbSet<Contact> Contacts => Set<Contact>();
+    public DbSet<ContactTag> ContactTags => Set<ContactTag>();
+    public DbSet<Pipeline> Pipelines => Set<Pipeline>();
+    public DbSet<PipelineStage> PipelineStages => Set<PipelineStage>();
+    public DbSet<Deal> Deals => Set<Deal>();
+    public DbSet<DealStageHistory> DealStageHistory => Set<DealStageHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -200,8 +206,11 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.Property(l => l.Phone).HasMaxLength(30);
             e.Property(l => l.SessionId).HasMaxLength(64).IsRequired();
             e.Property(l => l.Source).HasMaxLength(20).HasDefaultValue("widget");
+            e.HasIndex(l => l.ContactId);
             e.HasOne(l => l.Agent).WithMany(a => a.Leads).HasForeignKey(l => l.AgentId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(l => l.Company).WithMany(c => c.Leads).HasForeignKey(l => l.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            // Lead → Contact: preserve raw capture events when a contact is deleted/merged.
+            e.HasOne(l => l.Contact).WithMany(c => c.Leads).HasForeignKey(l => l.ContactId).OnDelete(DeleteBehavior.SetNull);
         });
 
         // HandoffEvent
@@ -253,6 +262,87 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.Property(a => a.IpAddress).HasMaxLength(45);
             e.HasOne(a => a.Company).WithMany(c => c.AuditLogs).HasForeignKey(a => a.CompanyId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(a => a.User).WithMany(u => u.AuditLogs).HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ── CRM ───────────────────────────────────────────────────────────────
+
+        // Contact
+        modelBuilder.Entity<Contact>(e =>
+        {
+            e.HasKey(c => c.Id);
+            // Partial-unique dedup keys (race guard) — one contact per normalized email/phone per company.
+            e.HasIndex(c => new { c.CompanyId, c.EmailNormalized })
+                .IsUnique().HasFilter("\"EmailNormalized\" IS NOT NULL");
+            e.HasIndex(c => new { c.CompanyId, c.PhoneNormalized })
+                .IsUnique().HasFilter("\"PhoneNormalized\" IS NOT NULL");
+            e.HasIndex(c => new { c.CompanyId, c.LastActivityAt });
+            e.HasIndex(c => new { c.CompanyId, c.OwnerUserId });
+            e.Property(c => c.Name).HasMaxLength(200);
+            e.Property(c => c.Email).HasMaxLength(254);
+            e.Property(c => c.Phone).HasMaxLength(30);
+            e.Property(c => c.EmailNormalized).HasMaxLength(254);
+            e.Property(c => c.PhoneNormalized).HasMaxLength(30);
+            e.Property(c => c.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(c => c.Source).HasMaxLength(20);
+            e.Property(c => c.EstimatedValue).HasPrecision(12, 2);
+            e.Property(c => c.Notes).HasMaxLength(4000);
+            e.HasOne(c => c.Company).WithMany().HasForeignKey(c => c.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(c => c.OwnerUser).WithMany().HasForeignKey(c => c.OwnerUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ContactTag
+        modelBuilder.Entity<ContactTag>(e =>
+        {
+            e.HasKey(t => t.Id);
+            e.HasIndex(t => new { t.ContactId, t.Tag }).IsUnique();
+            e.HasIndex(t => new { t.CompanyId, t.Tag });
+            e.Property(t => t.Tag).HasMaxLength(50).IsRequired();
+            e.HasOne(t => t.Contact).WithMany(c => c.Tags).HasForeignKey(t => t.ContactId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Pipeline
+        modelBuilder.Entity<Pipeline>(e =>
+        {
+            e.HasKey(p => p.Id);
+            e.HasIndex(p => new { p.CompanyId, p.IsDefault })
+                .IsUnique().HasFilter("\"IsDefault\" = true");
+            e.Property(p => p.Name).HasMaxLength(100).IsRequired();
+            e.HasOne(p => p.Company).WithMany().HasForeignKey(p => p.CompanyId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // PipelineStage
+        modelBuilder.Entity<PipelineStage>(e =>
+        {
+            e.HasKey(s => s.Id);
+            e.HasIndex(s => new { s.PipelineId, s.SortOrder });
+            e.Property(s => s.Name).HasMaxLength(100).IsRequired();
+            e.HasOne(s => s.Pipeline).WithMany(p => p.Stages).HasForeignKey(s => s.PipelineId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Deal
+        modelBuilder.Entity<Deal>(e =>
+        {
+            e.HasKey(d => d.Id);
+            e.HasIndex(d => new { d.CompanyId, d.PipelineId, d.StageId });
+            e.HasIndex(d => new { d.CompanyId, d.Status });
+            e.HasIndex(d => d.ContactId);
+            e.Property(d => d.Title).HasMaxLength(200).IsRequired();
+            e.Property(d => d.Value).HasPrecision(12, 2);
+            e.Property(d => d.Currency).HasMaxLength(3).HasDefaultValue("BRL");
+            e.Property(d => d.Status).HasConversion<string>().HasMaxLength(20);
+            e.HasOne(d => d.Company).WithMany().HasForeignKey(d => d.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(d => d.Contact).WithMany(c => c.Deals).HasForeignKey(d => d.ContactId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(d => d.Pipeline).WithMany().HasForeignKey(d => d.PipelineId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(d => d.Stage).WithMany().HasForeignKey(d => d.StageId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(d => d.OwnerUser).WithMany().HasForeignKey(d => d.OwnerUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // DealStageHistory
+        modelBuilder.Entity<DealStageHistory>(e =>
+        {
+            e.HasKey(h => h.Id);
+            e.HasIndex(h => new { h.DealId, h.CreatedAt });
+            e.HasOne(h => h.Deal).WithMany(d => d.StageHistory).HasForeignKey(h => h.DealId).OnDelete(DeleteBehavior.Cascade);
         });
 
     }

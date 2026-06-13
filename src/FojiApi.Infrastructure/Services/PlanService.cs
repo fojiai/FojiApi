@@ -41,6 +41,8 @@ public class PlanService(FojiDbContext db) : IPlanService
             MaxMembers = req.MaxMembers,
             HasWhatsApp = req.HasWhatsApp,
             HasEscalationContacts = req.HasEscalationContacts,
+            HasGoogleCalendar = req.HasGoogleCalendar,
+            HasCrm = req.HasCrm,
             MaxConversationsPerMonth = req.MaxConversationsPerMonth,
             MaxMessagesPerMonth = req.MaxMessagesPerMonth,
             TrialDays = req.TrialDays,
@@ -68,6 +70,8 @@ public class PlanService(FojiDbContext db) : IPlanService
         plan.MaxMembers = req.MaxMembers;
         plan.HasWhatsApp = req.HasWhatsApp;
         plan.HasEscalationContacts = req.HasEscalationContacts;
+        plan.HasGoogleCalendar = req.HasGoogleCalendar;
+        plan.HasCrm = req.HasCrm;
         plan.MaxConversationsPerMonth = req.MaxConversationsPerMonth;
         plan.MaxMessagesPerMonth = req.MaxMessagesPerMonth;
         plan.TrialDays = req.TrialDays;
@@ -98,6 +102,6 @@ public class PlanService(FojiDbContext db) : IPlanService
 
     private static PlanResult ToResult(Plan p)
         => new(p.Id, p.Name, p.Slug, p.Description, p.MonthlyPrice, p.Currency, p.StripePriceId, p.MaxAgents, p.MaxMembers,
-               p.HasWhatsApp, p.HasEscalationContacts, p.MaxConversationsPerMonth, p.MaxMessagesPerMonth,
+               p.HasWhatsApp, p.HasEscalationContacts, p.HasGoogleCalendar, p.HasCrm, p.MaxConversationsPerMonth, p.MaxMessagesPerMonth,
                p.TrialDays, p.IsPublic, p.IsActive, p.CustomForCompanyId);
 }

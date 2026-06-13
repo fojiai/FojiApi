@@ -20,4 +20,4 @@ public record SubscriptionResult(
     bool HasStripeSubscription
 );
 
-public record SubscriptionPlanResult(int Id, string Name, int MaxAgents, bool HasWhatsApp, bool HasEscalationContacts, int MaxConversationsPerMonth, int MaxMessagesPerMonth);
+public record SubscriptionPlanResult(int Id, string Name, int MaxAgents, bool HasWhatsApp, bool HasEscalationContacts, bool HasGoogleCalendar, bool HasCrm, int MaxConversationsPerMonth, int MaxMessagesPerMonth);

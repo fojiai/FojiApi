@@ -18,6 +18,7 @@ public class Plan : BaseEntity
     public bool HasWhatsApp { get; set; } = false;
     public bool HasEscalationContacts { get; set; } = false;
     public bool HasGoogleCalendar { get; set; } = false;
+    public bool HasCrm { get; set; } = false;
 
     /// <summary>Maximum new chat sessions per company per month. 0 = unlimited.</summary>
     public int MaxConversationsPerMonth { get; set; } = 0;

@@ -49,6 +49,14 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
                 "Google Calendar integration is not available on your current plan. Please upgrade to enable this feature.");
     }
 
+    public async Task EnsureCanUseCrmAsync(int companyId)
+    {
+        var plan = await GetActivePlanAsync(companyId);
+        if (plan == null || !plan.HasCrm)
+            throw new DomainException(
+                "The CRM is not available on your current plan. Please upgrade to enable this feature.");
+    }
+
     public async Task EnsureCanInviteMemberAsync(int companyId)
     {
         var plan = await GetActivePlanAsync(companyId);

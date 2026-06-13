@@ -6,6 +6,7 @@ public interface IPlanEnforcementService
     Task EnsureCanEnableWhatsAppAsync(int companyId);
     Task EnsureCanUseEscalationContactsAsync(int companyId);
     Task EnsureCanUseGoogleCalendarAsync(int companyId);
+    Task EnsureCanUseCrmAsync(int companyId);
     Task EnsureCanInviteMemberAsync(int companyId);
     Task EnsureHasActiveSubscriptionAsync(int companyId);
     void EnsureFileSizeAllowed(long fileSizeBytes);

@@ -11,7 +11,11 @@ public class Lead : BaseEntity
     public string SessionId { get; set; } = string.Empty;
     public string Source { get; set; } = "widget"; // "widget" | "whatsapp"
 
+    /// <summary>The deduped CRM contact this raw capture event rolls up to (null for anonymous captures).</summary>
+    public int? ContactId { get; set; }
+
     // Navigation
     public Agent Agent { get; set; } = null!;
     public Company Company { get; set; } = null!;
+    public Contact? Contact { get; set; }
 }

@@ -52,3 +52,22 @@ public enum AccountType
     Business,    // Pessoa Jurídica — CNPJ
     Individual   // Pessoa Física  — CPF
 }
+
+/// <summary>Lifecycle stage of a CRM contact.</summary>
+public enum ContactStatus
+{
+    New,
+    Open,
+    Qualified,
+    Customer,
+    Unqualified,
+    Archived
+}
+
+/// <summary>Status of a CRM deal/opportunity (denormalized from the stage's IsWon/IsLost).</summary>
+public enum DealStatus
+{
+    Open,
+    Won,
+    Lost
+}

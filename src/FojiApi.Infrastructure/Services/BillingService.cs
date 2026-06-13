@@ -161,7 +161,7 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
         return new SubscriptionResult(
             sub.Id,
             sub.Status.ToString().ToLower(),
-            new SubscriptionPlanResult(sub.Plan.Id, sub.Plan.Name, sub.Plan.MaxAgents, sub.Plan.HasWhatsApp, sub.Plan.HasEscalationContacts, sub.Plan.MaxConversationsPerMonth, sub.Plan.MaxMessagesPerMonth),
+            new SubscriptionPlanResult(sub.Plan.Id, sub.Plan.Name, sub.Plan.MaxAgents, sub.Plan.HasWhatsApp, sub.Plan.HasEscalationContacts, sub.Plan.HasGoogleCalendar, sub.Plan.HasCrm, sub.Plan.MaxConversationsPerMonth, sub.Plan.MaxMessagesPerMonth),
             sub.CurrentPeriodStart, sub.CurrentPeriodEnd, sub.TrialEndsAt, sub.CanceledAt,
             !string.IsNullOrEmpty(sub.StripeSubscriptionId));
     }
