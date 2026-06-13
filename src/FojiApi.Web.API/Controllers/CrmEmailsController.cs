@@ -28,6 +28,15 @@ public class CrmEmailsController(
         return Ok(sent);
     }
 
+    [HttpPost("draft")]
+    public async Task<IActionResult> Draft([FromBody] DraftCrmEmailRequest req)
+    {
+        EnsureCompanyAccess(req.CompanyId, CompanyRole.User);
+        await planEnforcement.EnsureCanUseCrmAsync(req.CompanyId);
+        var draft = await crmEmailService.DraftAsync(req.CompanyId, new DraftEmailRequest(req.ContactId, req.Goal, req.Tone));
+        return Ok(draft);
+    }
+
     private void EnsureCompanyAccess(int companyId, CompanyRole minimum)
     {
         if (!CurrentUser.HasRoleInCompany(companyId, minimum) && !CurrentUser.IsSuperAdmin)
@@ -42,4 +51,11 @@ public record SendCrmEmailRequest(
     string ToEmail,
     string Subject,
     string Body
+);
+
+public record DraftCrmEmailRequest(
+    int CompanyId,
+    int? ContactId,
+    string Goal,
+    string? Tone
 );
