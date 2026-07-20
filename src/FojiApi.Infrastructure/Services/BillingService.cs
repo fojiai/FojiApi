@@ -141,13 +141,20 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
             .OrderByDescending(s => s.CreatedAt)
             .FirstOrDefaultAsync();
 
-        // Self-healing: if the company has a Stripe customer but no active Stripe subscription
+        // Self-healing: if the company has a Stripe customer but no active subscription
         // locally, check Stripe for active subscriptions and sync them.
-        var hasActiveStripeSub = sub != null
-            && !string.IsNullOrEmpty(sub.StripeSubscriptionId)
+        //
+        // Gate on ANY active subscription, not only a Stripe-backed one. An admin-assigned
+        // (comped/manual) subscription has no StripeSubscriptionId; if we only checked for a
+        // Stripe-backed sub here, self-healing would re-activate a previously-canceled Stripe
+        // subscription behind the active admin assignment. That produced two active subs where
+        // GetSubscription and CreateCheckoutSession disagreed on the current plan — so clicking
+        // a plan you don't appear to be on threw "You are already on this plan". Treat an active
+        // admin assignment as authoritative and skip the Stripe re-sync.
+        var hasActiveSub = sub != null
             && sub.Status is SubscriptionStatus.Active or SubscriptionStatus.Trialing;
 
-        if (!hasActiveStripeSub)
+        if (!hasActiveSub)
         {
             var company = await db.Companies.FindAsync(companyId);
             if (company != null && !string.IsNullOrEmpty(company.StripeCustomerId))
