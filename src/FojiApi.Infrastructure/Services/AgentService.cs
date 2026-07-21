@@ -11,7 +11,8 @@ namespace FojiApi.Infrastructure.Services;
 public class AgentService(
     FojiDbContext db,
     IIndustryPromptService industryPromptService,
-    IPlanEnforcementService planEnforcement) : IAgentService
+    IPlanEnforcementService planEnforcement,
+    IEncryptionService encryption) : IAgentService
 {
     public async Task<IEnumerable<AgentListItem>> GetAgentsAsync(int companyId)
     {
@@ -54,7 +55,8 @@ public class AgentService(
             agent.HandoffEnabled, agent.HandoffNotifyEmail,
             agent.HandoffNotifyWhatsApp, agent.HandoffMessage,
             calendarActive,
-            calendarActive ? agent.CalendarConnection!.GoogleAccountEmail : null
+            calendarActive ? agent.CalendarConnection!.GoogleAccountEmail : null,
+            !string.IsNullOrEmpty(agent.WhatsAppAccessTokenEncrypted)
         );
     }
 
@@ -99,7 +101,8 @@ public class AgentService(
         string? welcomeMessage, string? conversationStarters,
         string? widgetPrimaryColor, string? widgetTitle, string? widgetPlaceholder, string? widgetPosition,
         string? responseStyle, bool? leadCaptureEnabled, string? leadCapturePrompt,
-        bool? handoffEnabled, string? handoffNotifyEmail, string? handoffNotifyWhatsApp, string? handoffMessage)
+        bool? handoffEnabled, string? handoffNotifyEmail, string? handoffNotifyWhatsApp, string? handoffMessage,
+        string? whatsAppAccessToken = null)
     {
         var agent = await db.Agents.FindAsync(agentId)
             ?? throw new NotFoundException("Agent not found.");
@@ -124,6 +127,12 @@ public class AgentService(
         }
 
         if (whatsAppPhoneNumberId != null) agent.WhatsAppPhoneNumberId = whatsAppPhoneNumberId;
+
+        // WhatsApp access token — encrypt at rest; empty string clears it. Never returned to clients.
+        if (whatsAppAccessToken != null)
+            agent.WhatsAppAccessTokenEncrypted = whatsAppAccessToken.Trim().Length > 0
+                ? encryption.Encrypt(whatsAppAccessToken.Trim())
+                : null;
 
         // Escalation contacts — plan-gated, only enforce when any are being set
         var settingEscalation = supportWhatsAppNumber != null || salesWhatsAppNumber != null

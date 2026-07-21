@@ -16,6 +16,9 @@ public class Agent : BaseEntity
     public string AgentToken { get; set; } = string.Empty;
     public bool WhatsAppEnabled { get; set; } = false;
     public string? WhatsAppPhoneNumberId { get; set; }
+    // Per-tenant Meta Cloud API access token (AES-256-GCM, same scheme as calendar tokens).
+    // Phase 0: pasted by the owner; Phase 1: populated by Embedded Signup. foji-worker decrypts to send.
+    public string? WhatsAppAccessTokenEncrypted { get; set; }
 
     // Escalation contacts (shown in system prompt when set; plan-gated)
     public string? SupportWhatsAppNumber { get; set; }
