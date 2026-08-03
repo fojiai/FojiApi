@@ -78,6 +78,19 @@ public class WhatsAppWebhookService(
 
                 if (!value.TryGetProperty("messages", out var messages)) continue;
 
+                // WhatsApp sends the sender's profile name alongside the message.
+                // Forwarding it lets the CRM create a contact with a real name
+                // instead of just a phone number.
+                string? profileName = null;
+                if (value.TryGetProperty("contacts", out var waContacts)
+                    && waContacts.ValueKind == JsonValueKind.Array
+                    && waContacts.GetArrayLength() > 0
+                    && waContacts[0].TryGetProperty("profile", out var profile)
+                    && profile.TryGetProperty("name", out var profileNameEl))
+                {
+                    profileName = profileNameEl.GetString();
+                }
+
                 foreach (var msg in messages.EnumerateArray())
                 {
                     // Only process text messages
@@ -101,7 +114,8 @@ public class WhatsAppWebhookService(
                         from,
                         message_id = messageId,
                         text,
-                        timestamp
+                        timestamp,
+                        profile_name = profileName
                     });
 
                     logger.LogInformation(
