@@ -20,6 +20,7 @@ public class CrmTasksController(
         [FromQuery] int? dealId = null)
     {
         EnsureCompanyAccess(companyId, CompanyRole.User);
+        await planEnforcement.EnsureCanUseCrmAsync(companyId);
         return Ok(await taskService.GetTasksAsync(companyId, assigneeUserId, ParseStatus(status), contactId, dealId));
     }
 

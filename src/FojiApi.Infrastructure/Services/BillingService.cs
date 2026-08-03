@@ -469,13 +469,17 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
         return customer.Id;
     }
 
+    // Fail closed. Stripe also emits "incomplete", "incomplete_expired" and
+    // "paused"; mapping unknown statuses to Active meant a checkout whose first
+    // payment never succeeded was written locally as Active and granted the full
+    // plan. Anything we don't explicitly recognise is treated as unpaid.
     private static SubscriptionStatus MapStatus(string status) => status switch
     {
         "active" => SubscriptionStatus.Active,
         "trialing" => SubscriptionStatus.Trialing,
         "past_due" => SubscriptionStatus.PastDue,
         "canceled" or "cancelled" => SubscriptionStatus.Canceled,
-        "unpaid" => SubscriptionStatus.Unpaid,
-        _ => SubscriptionStatus.Active
+        "unpaid" or "incomplete" or "incomplete_expired" or "paused" => SubscriptionStatus.Unpaid,
+        _ => SubscriptionStatus.Unpaid
     };
 }

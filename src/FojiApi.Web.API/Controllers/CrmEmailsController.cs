@@ -15,6 +15,7 @@ public class CrmEmailsController(
     public async Task<IActionResult> GetForContact([FromQuery] int companyId, [FromQuery] int contactId)
     {
         EnsureCompanyAccess(companyId, CompanyRole.User);
+        await planEnforcement.EnsureCanUseCrmAsync(companyId);
         return Ok(await crmEmailService.GetForContactAsync(companyId, contactId));
     }
 

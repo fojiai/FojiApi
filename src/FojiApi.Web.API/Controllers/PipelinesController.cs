@@ -14,6 +14,7 @@ public class PipelinesController(
     public async Task<IActionResult> GetPipelines([FromQuery] int companyId)
     {
         EnsureCompanyAccess(companyId, CompanyRole.User);
+        await planEnforcement.EnsureCanUseCrmAsync(companyId);
         return Ok(await pipelineService.GetPipelinesAsync(companyId));
     }
 

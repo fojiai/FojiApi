@@ -19,6 +19,7 @@ public class ContactsController(
         [FromQuery] string? search = null)
     {
         EnsureCompanyAccess(companyId, CompanyRole.User);
+        await planEnforcement.EnsureCanUseCrmAsync(companyId);
         return Ok(await contactService.GetContactsAsync(companyId, ownerUserId, ParseStatus(status), tag, search));
     }
 
@@ -26,6 +27,7 @@ public class ContactsController(
     public async Task<IActionResult> GetContact([FromRoute] int id, [FromQuery] int companyId)
     {
         EnsureCompanyAccess(companyId, CompanyRole.User);
+        await planEnforcement.EnsureCanUseCrmAsync(companyId);
         var contact = await contactService.GetContactAsync(companyId, id);
         return contact == null ? NotFound() : Ok(contact);
     }
@@ -34,6 +36,7 @@ public class ContactsController(
     public async Task<IActionResult> GetTimeline([FromRoute] int id, [FromQuery] int companyId)
     {
         EnsureCompanyAccess(companyId, CompanyRole.User);
+        await planEnforcement.EnsureCanUseCrmAsync(companyId);
         return Ok(await contactService.GetTimelineAsync(companyId, id));
     }
 
