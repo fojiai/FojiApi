@@ -378,6 +378,116 @@ public class ContactService(FojiDbContext db) : IContactService
             throw new DomainException("The selected owner is not an active member of this company.");
     }
 
+    // ── Duplicate review & merge ──────────────────────────────────────────────
+
+    public async Task<IEnumerable<ContactListItem>> GetDuplicateCandidatesAsync(int companyId, int contactId)
+    {
+        var contact = await db.Contacts.FirstOrDefaultAsync(c => c.CompanyId == companyId && c.Id == contactId);
+        if (contact == null) return [];
+
+        var name = Trim(contact.Name)?.ToLowerInvariant();
+
+        // Same email, same phone, or (when we have neither to match on) same name.
+        var query = db.Contacts.Where(c => c.CompanyId == companyId && c.Id != contactId);
+        query = query.Where(c =>
+            (contact.EmailNormalized != null && c.EmailNormalized == contact.EmailNormalized)
+            || (contact.PhoneNormalized != null && c.PhoneNormalized == contact.PhoneNormalized)
+            || (name != null && c.Name != null && c.Name.ToLower() == name));
+
+        return await query
+            .OrderByDescending(c => c.LastActivityAt ?? c.CreatedAt)
+            .Take(20)
+            .Select(c => new ContactListItem(
+                c.Id, c.Name, c.Email, c.Phone, c.Status.ToString(), c.Source,
+                c.OwnerUserId,
+                c.OwnerUser != null ? (c.OwnerUser.FirstName + " " + c.OwnerUser.LastName).Trim() : null,
+                c.EstimatedValue, c.NeedsReviewDuplicate, c.LastActivityAt,
+                c.Tags.Select(x => x.Tag).ToList(),
+                c.Leads.Count, c.Deals.Count, c.CreatedAt))
+            .ToListAsync();
+    }
+
+    public async Task<ContactDetail?> MergeContactsAsync(int companyId, int primaryId, int duplicateId)
+    {
+        if (primaryId == duplicateId)
+            throw new DomainException("Cannot merge a contact into itself.");
+
+        var primary = await db.Contacts.FirstOrDefaultAsync(c => c.CompanyId == companyId && c.Id == primaryId)
+            ?? throw new NotFoundException("Contact not found.");
+        var duplicate = await db.Contacts.FirstOrDefaultAsync(c => c.CompanyId == companyId && c.Id == duplicateId)
+            ?? throw new NotFoundException("Duplicate contact not found.");
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+
+        // 1. Repoint everything that references the duplicate.
+        foreach (var lead in await db.Leads.Where(x => x.CompanyId == companyId && x.ContactId == duplicateId).ToListAsync())
+            lead.ContactId = primaryId;
+        foreach (var deal in await db.Deals.Where(x => x.CompanyId == companyId && x.ContactId == duplicateId).ToListAsync())
+            deal.ContactId = primaryId;
+        foreach (var task in await db.CrmTasks.Where(x => x.CompanyId == companyId && x.ContactId == duplicateId).ToListAsync())
+            task.ContactId = primaryId;
+        foreach (var meeting in await db.Meetings.Where(x => x.CompanyId == companyId && x.ContactId == duplicateId).ToListAsync())
+            meeting.ContactId = primaryId;
+        foreach (var email in await db.EmailLogs.Where(x => x.CompanyId == companyId && x.ContactId == duplicateId).ToListAsync())
+            email.ContactId = primaryId;
+
+        // 2. Move tags the primary doesn't already carry; drop the rest.
+        //    (ContactId + Tag is unique, so duplicates must not be repointed.)
+        var primaryTags = await db.ContactTags
+            .Where(x => x.ContactId == primaryId).Select(x => x.Tag).ToListAsync();
+        foreach (var tag in await db.ContactTags.Where(x => x.ContactId == duplicateId).ToListAsync())
+        {
+            if (primaryTags.Contains(tag.Tag)) db.ContactTags.Remove(tag);
+            else tag.ContactId = primaryId;
+        }
+
+        // 3. Carry over the later activity timestamp.
+        if (duplicate.LastActivityAt is { } dupActivity
+            && (primary.LastActivityAt == null || dupActivity > primary.LastActivityAt))
+        {
+            primary.LastActivityAt = dupActivity;
+        }
+
+        // 4. Remove the duplicate BEFORE claiming its email/phone — those columns are
+        //    uniquely indexed per company, so writing them onto the primary while the
+        //    duplicate still holds them would violate the constraint.
+        var dupName = duplicate.Name;
+        var dupEmail = duplicate.Email;
+        var dupEmailNorm = duplicate.EmailNormalized;
+        var dupPhone = duplicate.Phone;
+        var dupPhoneNorm = duplicate.PhoneNormalized;
+        var dupNotes = duplicate.Notes;
+        var dupOwner = duplicate.OwnerUserId;
+        var dupValue = duplicate.EstimatedValue;
+
+        db.Contacts.Remove(duplicate);
+        await db.SaveChangesAsync();
+
+        // 5. Fill only the gaps on the primary — never overwrite existing data.
+        if (string.IsNullOrWhiteSpace(primary.Name)) primary.Name = dupName;
+        if (string.IsNullOrWhiteSpace(primary.Email))
+        {
+            primary.Email = dupEmail;
+            primary.EmailNormalized = dupEmailNorm;
+        }
+        if (string.IsNullOrWhiteSpace(primary.Phone))
+        {
+            primary.Phone = dupPhone;
+            primary.PhoneNormalized = dupPhoneNorm;
+        }
+        if (string.IsNullOrWhiteSpace(primary.Notes)) primary.Notes = dupNotes;
+        primary.OwnerUserId ??= dupOwner;
+        primary.EstimatedValue ??= dupValue;
+
+        // The reason the flag existed is now resolved.
+        primary.NeedsReviewDuplicate = false;
+
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
+
+        return await GetContactAsync(companyId, primaryId);
+    }
+
     private static string? Trim(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
     private static string? NormalizeEmail(string? email) =>

@@ -24,6 +24,16 @@ public interface IContactService
     Task<IReadOnlyList<string>> AddTagAsync(int companyId, int contactId, string tag);
     Task<IReadOnlyList<string>> RemoveTagAsync(int companyId, int contactId, string tag);
     Task<int> GetContactCountAsync(int companyId);
+
+    /// <summary>Possible duplicates of a contact, for the merge screen.</summary>
+    Task<IEnumerable<ContactListItem>> GetDuplicateCandidatesAsync(int companyId, int contactId);
+
+    /// <summary>
+    /// Folds <paramref name="duplicateId"/> into <paramref name="primaryId"/>: moves
+    /// leads, deals, tasks, meetings, emails and tags, fills blank fields on the
+    /// primary, then deletes the duplicate.
+    /// </summary>
+    Task<ContactDetail?> MergeContactsAsync(int companyId, int primaryId, int duplicateId);
 }
 
 public record ContactCaptureResult(int LeadId, int? ContactId, string SessionId);

@@ -40,6 +40,25 @@ public class ContactsController(
         return Ok(await contactService.GetTimelineAsync(companyId, id));
     }
 
+    /// <summary>Possible duplicates of this contact, for the merge screen.</summary>
+    [HttpGet("{id:int}/duplicates")]
+    public async Task<IActionResult> GetDuplicates([FromRoute] int id, [FromQuery] int companyId)
+    {
+        EnsureCompanyAccess(companyId, CompanyRole.User);
+        await planEnforcement.EnsureCanUseCrmAsync(companyId);
+        return Ok(await contactService.GetDuplicateCandidatesAsync(companyId, id));
+    }
+
+    /// <summary>Folds the duplicate into this contact and deletes the duplicate.</summary>
+    [HttpPost("{id:int}/merge")]
+    public async Task<IActionResult> Merge([FromRoute] int id, [FromBody] MergeContactRequest req)
+    {
+        EnsureCompanyAccess(req.CompanyId, CompanyRole.Admin);
+        await planEnforcement.EnsureCanUseCrmAsync(req.CompanyId);
+        var merged = await contactService.MergeContactsAsync(req.CompanyId, id, req.DuplicateId);
+        return merged == null ? NotFound() : Ok(merged);
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateContact([FromBody] UpsertContactRequest req)
     {
@@ -101,3 +120,5 @@ public record UpsertContactRequest(
 );
 
 public record TagRequest(int CompanyId, string Tag);
+
+public record MergeContactRequest(int CompanyId, int DuplicateId);
