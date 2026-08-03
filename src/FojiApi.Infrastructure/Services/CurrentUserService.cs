@@ -31,9 +31,15 @@ public class CurrentUserService(IHttpContextAccessor httpContextAccessor) : ICur
 
     public CompanyRole? GetRoleInCompany(int companyId)
     {
-        return GetAllCompanyRoles()
-            .FirstOrDefault(r => r.CompanyId == companyId)
-            .Role;
+        // NOTE: do not use FirstOrDefault here. GetAllCompanyRoles yields a value
+        // tuple, so a no-match returns default((int, CompanyRole)) — and because
+        // CompanyRole.Owner is 0, that silently reads back as "Owner", granting
+        // every caller owner rights on every company. Return an explicit null.
+        foreach (var (cid, role) in GetAllCompanyRoles())
+        {
+            if (cid == companyId) return role;
+        }
+        return null;
     }
 
     public bool HasRoleInCompany(int companyId, CompanyRole minimumRole)
