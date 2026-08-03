@@ -19,6 +19,16 @@ public class DealsController(
         return Ok(await dealService.GetBoardAsync(companyId, pipelineId));
     }
 
+    /// <summary>Single deal, for the detail view.</summary>
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetDeal([FromRoute] int id, [FromQuery] int companyId)
+    {
+        EnsureCompanyAccess(companyId, CompanyRole.User);
+        await planEnforcement.EnsureCanUseCrmAsync(companyId);
+        var deal = await dealService.GetDealAsync(companyId, id);
+        return deal == null ? NotFound() : Ok(deal);
+    }
+
     [HttpPost]
     public async Task<IActionResult> CreateDeal([FromBody] CreateDealRequest req)
     {
@@ -26,8 +36,16 @@ public class DealsController(
         await planEnforcement.EnsureCanUseCrmAsync(req.CompanyId);
         var created = await dealService.CreateDealAsync(req.CompanyId, new CreateDealInput(
             req.PipelineId, req.StageId, req.ContactId, req.OwnerUserId,
-            req.Title, req.Value, req.Currency, req.ExpectedCloseDate));
+            req.Title, req.Value, req.Currency, req.ExpectedCloseDate), CurrentUser.UserId);
         return Ok(created);
+    }
+
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> DeleteDeal([FromRoute] int id, [FromQuery] int companyId)
+    {
+        EnsureCompanyAccess(companyId, CompanyRole.Admin);
+        await planEnforcement.EnsureCanUseCrmAsync(companyId);
+        return await dealService.DeleteDealAsync(companyId, id) ? NoContent() : NotFound();
     }
 
     [HttpPut("{id:int}")]

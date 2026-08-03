@@ -3,9 +3,11 @@ namespace FojiApi.Core.Interfaces.Services;
 public interface IDealService
 {
     Task<BoardDto> GetBoardAsync(int companyId, int? pipelineId = null);
-    Task<DealDto> CreateDealAsync(int companyId, CreateDealInput input);
+    Task<DealDto?> GetDealAsync(int companyId, int dealId);
+    Task<DealDto> CreateDealAsync(int companyId, CreateDealInput input, int? actingUserId = null);
     Task<DealDto?> UpdateDealAsync(int companyId, int dealId, UpdateDealInput input);
     Task<DealDto?> MoveStageAsync(int companyId, int dealId, int toStageId, int? changedByUserId);
+    Task<bool> DeleteDealAsync(int companyId, int dealId);
 }
 
 public record BoardDto(int PipelineId, string PipelineName, IReadOnlyList<BoardColumn> Columns);

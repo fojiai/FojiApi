@@ -52,7 +52,7 @@ public class DealService(FojiDbContext db, IPipelineService pipelineService) : I
         return new BoardDto(pipeline.Id, pipeline.Name, columns);
     }
 
-    public async Task<DealDto> CreateDealAsync(int companyId, CreateDealInput input)
+    public async Task<DealDto> CreateDealAsync(int companyId, CreateDealInput input, int? actingUserId = null)
     {
         var pipeline = input.PipelineId.HasValue
             ? await pipelineService.GetPipelineAsync(companyId, input.PipelineId.Value)
@@ -90,7 +90,8 @@ public class DealService(FojiDbContext db, IPipelineService pipelineService) : I
         db.DealStageHistory.Add(new DealStageHistory
         {
             CompanyId = companyId, Deal = deal, FromStageId = null, ToStageId = stage.Id,
-            ChangedByUserId = input.OwnerUserId,
+            // The acting user, not the deal owner — these are different people.
+            ChangedByUserId = actingUserId,
         });
 
         // Bump the contact's activity.
@@ -147,9 +148,34 @@ public class DealService(FojiDbContext db, IPipelineService pipelineService) : I
         return await GetDealAsync(companyId, dealId);
     }
 
+    public async Task<bool> DeleteDealAsync(int companyId, int dealId)
+    {
+        var deal = await db.Deals.FirstOrDefaultAsync(d => d.CompanyId == companyId && d.Id == dealId);
+        if (deal == null) return false;
+
+        // Stage history has no cascade from Deal, so clear it explicitly.
+        var history = await db.DealStageHistory
+            .Where(h => h.CompanyId == companyId && h.DealId == dealId)
+            .ToListAsync();
+        db.DealStageHistory.RemoveRange(history);
+
+        // Tasks, meetings and emails reference the deal optionally — unlink rather
+        // than delete, so the activity record survives on the contact.
+        var tasks = await db.CrmTasks.Where(x => x.CompanyId == companyId && x.DealId == dealId).ToListAsync();
+        foreach (var x in tasks) x.DealId = null;
+        var meetings = await db.Meetings.Where(x => x.CompanyId == companyId && x.DealId == dealId).ToListAsync();
+        foreach (var x in meetings) x.DealId = null;
+        var emails = await db.EmailLogs.Where(x => x.CompanyId == companyId && x.DealId == dealId).ToListAsync();
+        foreach (var x in emails) x.DealId = null;
+
+        db.Deals.Remove(deal);
+        await db.SaveChangesAsync();
+        return true;
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private async Task<DealDto?> GetDealAsync(int companyId, int dealId)
+    public async Task<DealDto?> GetDealAsync(int companyId, int dealId)
     {
         return await db.Deals
             .Where(d => d.CompanyId == companyId && d.Id == dealId)
