@@ -9,6 +9,10 @@ namespace FojiApi.Infrastructure.Services;
 
 public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailService emailService) : ICompanyService
 {
+    /// <summary>How many companies one user may own via self-serve signup.</summary>
+    private const int MaxSelfServeCompaniesPerUser = 3;
+
+
     public async Task<IEnumerable<UserCompanyResult>> GetUserCompaniesAsync(int userId)
     {
         return await db.UserCompanies
@@ -38,6 +42,18 @@ public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailServ
         var user = await db.Users.Include(u => u.UserCompanies).ThenInclude(uc => uc.Company).FirstOrDefaultAsync(u => u.Id == userId)
             ?? throw new NotFoundException($"User with id {userId} not found.");
 
+        // Cap self-serve company creation. Creating a company auto-grants a trial
+        // (below), so an uncapped endpoint let one account mint unlimited tenants,
+        // each with a fresh trial and a fresh set of plan allowances.
+        if (!user.IsSuperAdmin)
+        {
+            var ownedCount = await db.UserCompanies
+                .CountAsync(uc => uc.UserId == userId && uc.IsActive && uc.Role == CompanyRole.Owner);
+            if (ownedCount >= MaxSelfServeCompaniesPerUser)
+                throw new DomainException(
+                    $"You can create up to {MaxSelfServeCompaniesPerUser} companies. Contact support if you need more.");
+        }
+
         var company = new Company { Name = name.Trim(), Slug = resolvedSlug, Description = description?.Trim() };
         db.Companies.Add(company);
 
@@ -50,11 +66,19 @@ public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailServ
         };
         db.UserCompanies.Add(userCompany);
 
-        // Create a trial subscription defaulting to the cheapest public plan
-        var basePlan = await db.Plans
-            .Where(p => p.IsActive && p.IsPublic && p.CustomForCompanyId == null)
-            .OrderBy(p => p.MonthlyPrice)
-            .FirstOrDefaultAsync();
+        // Create a trial subscription defaulting to the cheapest public plan.
+        // Only the user's first company gets one — otherwise creating companies is
+        // an unlimited trial dispenser.
+        var alreadyHadTrial = await db.Subscriptions
+            .AnyAsync(s => db.UserCompanies
+                .Any(uc => uc.UserId == userId && uc.CompanyId == s.CompanyId && uc.Role == CompanyRole.Owner));
+
+        var basePlan = alreadyHadTrial
+            ? null
+            : await db.Plans
+                .Where(p => p.IsActive && p.IsPublic && p.CustomForCompanyId == null)
+                .OrderBy(p => p.MonthlyPrice)
+                .FirstOrDefaultAsync();
 
         if (basePlan != null)
         {

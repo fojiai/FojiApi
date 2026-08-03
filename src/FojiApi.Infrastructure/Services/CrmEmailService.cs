@@ -27,6 +27,17 @@ public class CrmEmailService(
         if (string.IsNullOrWhiteSpace(input.Subject)) throw new DomainException("A subject is required.");
         if (string.IsNullOrWhiteSpace(input.Body)) throw new DomainException("An email body is required.");
 
+        // The recipient must be the contact's own address. ToEmail was previously
+        // free-form and never compared against the contact, which turned this
+        // endpoint into an open relay: any member could send arbitrary subject and
+        // body to arbitrary addresses through Foji's sending domain and burn its
+        // reputation.
+        if (string.IsNullOrWhiteSpace(contact.Email)
+            || !string.Equals(contact.Email.Trim(), to, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new DomainException("Emails can only be sent to the contact's own email address.");
+        }
+
         await emailService.SendCrmEmailAsync(to, input.Subject.Trim(), input.Body);
 
         var now = DateTime.UtcNow;
