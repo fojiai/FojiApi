@@ -9,14 +9,16 @@ namespace FojiApi.Infrastructure.Services;
 
 public class PipelineService(FojiDbContext db) : IPipelineService
 {
-    // Default stages seeded for a company's first pipeline.
+    // Default stages seeded for a company's first pipeline. These are stored as
+    // free text and shown verbatim in the board, so they are seeded in pt-BR —
+    // the product's default locale and primary market. Users can rename them.
     private static readonly (string Name, bool IsWon, bool IsLost)[] DefaultStages =
     [
-        ("New", false, false),
-        ("Contacted", false, false),
-        ("Proposal", false, false),
-        ("Won", true, false),
-        ("Lost", false, true),
+        ("Novo", false, false),
+        ("Contatado", false, false),
+        ("Proposta", false, false),
+        ("Ganho", true, false),
+        ("Perdido", false, true),
     ];
 
     public async Task<PipelineDto> EnsureDefaultPipelineAsync(int companyId)
@@ -26,7 +28,7 @@ public class PipelineService(FojiDbContext db) : IPipelineService
         if (existing != null)
             return (await GetPipelineAsync(companyId, existing.Id))!;
 
-        var pipeline = new Pipeline { CompanyId = companyId, Name = "Sales", IsDefault = true, SortOrder = 0 };
+        var pipeline = new Pipeline { CompanyId = companyId, Name = "Vendas", IsDefault = true, SortOrder = 0 };
         for (var i = 0; i < DefaultStages.Length; i++)
         {
             var (name, isWon, isLost) = DefaultStages[i];
