@@ -3,15 +3,27 @@ using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace FojiApi.Infrastructure.Services;
 
-public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
+public class PlanEnforcementService(FojiDbContext db, IConfiguration configuration) : IPlanEnforcementService
 {
     private const long MaxFileSizeBytes = 30L * 1024 * 1024; // 30 MB
 
+    /// <summary>
+    /// Dev switch: when Billing:EnforcementEnabled is false, every plan gate is
+    /// skipped so features can be exercised without a subscription. Defaults to
+    /// true — production must opt out explicitly, never by omission.
+    /// File size stays enforced; it is a technical limit, not a billing one.
+    /// </summary>
+    private bool EnforcementEnabled =>
+        configuration.GetValue<bool?>("Billing:EnforcementEnabled") ?? true;
+
     public async Task EnsureCanCreateAgentAsync(int companyId)
     {
+        if (!EnforcementEnabled) return;
+
         var plan = await GetActivePlanAsync(companyId);
         if (plan == null)
             throw new DomainException("No active subscription found. Please subscribe to a plan to create agents.");
@@ -27,6 +39,8 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
 
     public async Task EnsureCanEnableWhatsAppAsync(int companyId)
     {
+        if (!EnforcementEnabled) return;
+
         var plan = await GetActivePlanAsync(companyId);
         if (plan == null || !plan.HasWhatsApp)
             throw new DomainException(
@@ -35,6 +49,8 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
 
     public async Task EnsureCanUseEscalationContactsAsync(int companyId)
     {
+        if (!EnforcementEnabled) return;
+
         var plan = await GetActivePlanAsync(companyId);
         if (plan == null || !plan.HasEscalationContacts)
             throw new DomainException(
@@ -43,6 +59,8 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
 
     public async Task EnsureCanUseGoogleCalendarAsync(int companyId)
     {
+        if (!EnforcementEnabled) return;
+
         var plan = await GetActivePlanAsync(companyId);
         if (plan == null || !plan.HasGoogleCalendar)
             throw new DomainException(
@@ -51,6 +69,8 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
 
     public async Task EnsureCanUseCrmAsync(int companyId)
     {
+        if (!EnforcementEnabled) return;
+
         var plan = await GetActivePlanAsync(companyId);
         if (plan == null || !plan.HasCrm)
             throw new DomainException(
@@ -59,6 +79,8 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
 
     public async Task EnsureCanInviteMemberAsync(int companyId)
     {
+        if (!EnforcementEnabled) return;
+
         var plan = await GetActivePlanAsync(companyId);
         if (plan == null)
             throw new DomainException("No active subscription found. Please subscribe to a plan to invite members.");
@@ -79,6 +101,8 @@ public class PlanEnforcementService(FojiDbContext db) : IPlanEnforcementService
 
     public async Task EnsureHasActiveSubscriptionAsync(int companyId)
     {
+        if (!EnforcementEnabled) return;
+
         var subscription = await db.Subscriptions
             .Where(s => s.CompanyId == companyId &&
                         (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))

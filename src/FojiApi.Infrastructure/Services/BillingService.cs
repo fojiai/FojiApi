@@ -133,8 +133,38 @@ public class BillingService(FojiDbContext db, IConfiguration configuration, IEma
         return session.Url;
     }
 
+    /// <summary>
+    /// Dev switch — see PlanEnforcementService. When billing enforcement is off,
+    /// the subscription is reported with every feature unlocked and no limits, so
+    /// the dashboard stops showing upgrade prompts for gates the API isn't
+    /// applying either. Defaults to true.
+    /// </summary>
+    private bool EnforcementEnabled =>
+        configuration.GetValue<bool?>("Billing:EnforcementEnabled") ?? true;
+
+    private static SubscriptionPlanResult UnlockedPlan(int id, string name) =>
+        new(id, name, int.MaxValue, true, true, true, true, 0, 0);
+
     public async Task<SubscriptionResult?> GetSubscriptionAsync(int companyId)
     {
+        if (!EnforcementEnabled)
+        {
+            var devSub = await db.Subscriptions
+                .Include(s => s.Plan)
+                .Where(s => s.CompanyId == companyId)
+                .OrderByDescending(s => s.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            // Report an unlocked plan whether or not a subscription row exists.
+            return new SubscriptionResult(
+                devSub?.Id ?? 0,
+                "active",
+                UnlockedPlan(devSub?.Plan.Id ?? 0, devSub?.Plan.Name ?? "Development"),
+                devSub?.CurrentPeriodStart, devSub?.CurrentPeriodEnd,
+                devSub?.TrialEndsAt, null,
+                !string.IsNullOrEmpty(devSub?.StripeSubscriptionId));
+        }
+
         var sub = await db.Subscriptions
             .Include(s => s.Plan)
             .Where(s => s.CompanyId == companyId)
