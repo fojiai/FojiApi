@@ -94,3 +94,19 @@ public enum CrmTaskStatus
     Open,
     Done
 }
+
+/// <summary>Who answers inbound WhatsApp messages for an agent's number.</summary>
+public enum WhatsAppMode
+{
+    /// <summary>The AI agent replies automatically (the original behaviour).</summary>
+    Agent,
+
+    /// <summary>Messages land in the shared team inbox and the AI stays silent.</summary>
+    Inbox
+}
+
+public enum MessageDirection
+{
+    Inbound,
+    Outbound
+}

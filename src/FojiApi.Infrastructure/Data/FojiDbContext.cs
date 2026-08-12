@@ -32,6 +32,8 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
     public DbSet<CrmTask> CrmTasks => Set<CrmTask>();
     public DbSet<Meeting> Meetings => Set<Meeting>();
     public DbSet<EmailLog> EmailLogs => Set<EmailLog>();
+    public DbSet<WhatsAppConversation> WhatsAppConversations => Set<WhatsAppConversation>();
+    public DbSet<WhatsAppMessage> WhatsAppMessages => Set<WhatsAppMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -67,6 +69,7 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
         {
             e.HasKey(uc => new { uc.UserId, uc.CompanyId });
             e.Property(uc => uc.Role).HasConversion<string>().HasMaxLength(20);
+            e.Property(uc => uc.WhatsAppDisplayName).HasMaxLength(100);
             e.HasOne(uc => uc.User).WithMany(u => u.UserCompanies).HasForeignKey(uc => uc.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(uc => uc.Company).WithMany(c => c.UserCompanies).HasForeignKey(uc => uc.CompanyId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -82,6 +85,7 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.Property(a => a.AgentToken).HasMaxLength(64).IsRequired();
             e.Property(a => a.IndustryType).HasConversion<string>().HasMaxLength(30);
             e.Property(a => a.AgentLanguage).HasConversion<string>().HasMaxLength(10);
+            e.Property(a => a.WhatsAppMode).HasConversion<string>().HasMaxLength(20);
             e.Property(a => a.WelcomeMessage).HasMaxLength(500);
             e.Property(a => a.ConversationStarters).HasMaxLength(2000);
             e.Property(a => a.WidgetPrimaryColor).HasMaxLength(9);
@@ -368,6 +372,36 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
         });
 
         // Meeting
+        modelBuilder.Entity<WhatsAppConversation>(e =>
+        {
+            e.HasKey(c => c.Id);
+            // One thread per customer per agent number.
+            e.HasIndex(c => new { c.AgentId, c.ContactWaId }).IsUnique();
+            e.HasIndex(c => new { c.CompanyId, c.LastMessageAt });
+            e.HasIndex(c => c.ContactId);
+            e.Property(c => c.PhoneNumberId).HasMaxLength(64).IsRequired();
+            e.Property(c => c.ContactWaId).HasMaxLength(30).IsRequired();
+            e.Property(c => c.ContactName).HasMaxLength(200);
+            e.HasOne(c => c.Company).WithMany().HasForeignKey(c => c.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(c => c.Agent).WithMany().HasForeignKey(c => c.AgentId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(c => c.Contact).WithMany().HasForeignKey(c => c.ContactId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<WhatsAppMessage>(e =>
+        {
+            e.HasKey(m => m.Id);
+            e.HasIndex(m => new { m.ConversationId, m.CreatedAt });
+            // Meta retries webhooks and batches updates; dedupe on the wamid.
+            e.HasIndex(m => m.WamId).IsUnique().HasFilter("\"WamId\" IS NOT NULL");
+            e.Property(m => m.Body).HasMaxLength(4096).IsRequired();
+            e.Property(m => m.WamId).HasMaxLength(128);
+            e.Property(m => m.SenderDisplayName).HasMaxLength(100);
+            e.Property(m => m.Direction).HasConversion<string>().HasMaxLength(20);
+            e.HasOne(m => m.Conversation).WithMany(c => c.Messages)
+                .HasForeignKey(m => m.ConversationId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(m => m.SentByUser).WithMany().HasForeignKey(m => m.SentByUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
         modelBuilder.Entity<Meeting>(e =>
         {
             e.HasKey(m => m.Id);
