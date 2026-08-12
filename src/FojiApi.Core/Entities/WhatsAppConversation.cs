@@ -34,9 +34,13 @@ public class WhatsAppConversation : BaseEntity
 
     public int UnreadCount { get; set; }
 
+    /// <summary>Team member who claimed this conversation, so two people don't answer at once.</summary>
+    public int? AssignedUserId { get; set; }
+
     // Navigation
     public Company Company { get; set; } = null!;
     public Agent Agent { get; set; } = null!;
     public Contact? Contact { get; set; }
+    public User? AssignedUser { get; set; }
     public ICollection<WhatsAppMessage> Messages { get; set; } = new List<WhatsAppMessage>();
 }

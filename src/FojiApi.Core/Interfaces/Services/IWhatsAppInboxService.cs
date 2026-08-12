@@ -7,6 +7,8 @@ public record InboxConversationItem(
     string ContactWaId,
     string? ContactName,
     int? ContactId,
+    int? AssignedUserId,
+    string? AssignedUserName,
     string? LastMessagePreview,
     DateTime LastMessageAt,
     DateTime? LastInboundAt,
@@ -19,6 +21,11 @@ public record InboxMessageItem(
     int Id,
     string Direction,
     string Body,
+    string MessageType,
+    /// <summary>Short-lived presigned URL for media, null for text messages.</summary>
+    string? MediaUrl,
+    string? MediaContentType,
+    string? MediaFileName,
     int? SentByUserId,
     string? SenderDisplayName,
     DateTime CreatedAt
@@ -35,7 +42,10 @@ public interface IWhatsAppInboxService
     /// Records an inbound message, creating the conversation on first contact.
     /// Idempotent on the wamid — Meta retries and batches webhook deliveries.
     /// </summary>
-    Task RecordInboundAsync(int agentId, string phoneNumberId, string waId, string? profileName, string? wamId, string text);
+    Task RecordInboundAsync(
+        int agentId, string phoneNumberId, string waId, string? profileName, string? wamId,
+        string text, string messageType = "text",
+        string? mediaS3Key = null, string? mediaContentType = null, string? mediaFileName = null);
 
     Task<IEnumerable<InboxConversationItem>> GetConversationsAsync(int companyId, int? agentId = null);
 
@@ -48,4 +58,7 @@ public interface IWhatsAppInboxService
     Task<InboxMessageItem> SendReplyAsync(int companyId, int conversationId, int userId, string text);
 
     Task MarkReadAsync(int companyId, int conversationId);
+
+    /// <summary>Claims or releases a conversation. Pass null to unassign.</summary>
+    Task<InboxConversationItem?> AssignAsync(int companyId, int conversationId, int? userId);
 }

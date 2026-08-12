@@ -385,6 +385,7 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.HasOne(c => c.Company).WithMany().HasForeignKey(c => c.CompanyId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(c => c.Agent).WithMany().HasForeignKey(c => c.AgentId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(c => c.Contact).WithMany().HasForeignKey(c => c.ContactId).OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(c => c.AssignedUser).WithMany().HasForeignKey(c => c.AssignedUserId).OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<WhatsAppMessage>(e =>
@@ -396,6 +397,10 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.Property(m => m.Body).HasMaxLength(4096).IsRequired();
             e.Property(m => m.WamId).HasMaxLength(128);
             e.Property(m => m.SenderDisplayName).HasMaxLength(100);
+            e.Property(m => m.MessageType).HasMaxLength(20).IsRequired();
+            e.Property(m => m.MediaS3Key).HasMaxLength(512);
+            e.Property(m => m.MediaContentType).HasMaxLength(100);
+            e.Property(m => m.MediaFileName).HasMaxLength(255);
             e.Property(m => m.Direction).HasConversion<string>().HasMaxLength(20);
             e.HasOne(m => m.Conversation).WithMany(c => c.Messages)
                 .HasForeignKey(m => m.ConversationId).OnDelete(DeleteBehavior.Cascade);

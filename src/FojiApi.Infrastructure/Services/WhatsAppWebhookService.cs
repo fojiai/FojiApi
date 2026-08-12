@@ -93,20 +93,45 @@ public class WhatsAppWebhookService(
 
                 foreach (var msg in messages.EnumerateArray())
                 {
-                    // Only process text messages
-                    if (!msg.TryGetProperty("type", out var typeEl) || typeEl.GetString() != "text")
-                    {
-                        logger.LogDebug("Skipping non-text WhatsApp message (type={Type})",
-                            typeEl.GetString());
-                        continue;
-                    }
+                    if (!msg.TryGetProperty("type", out var typeEl)) continue;
+                    var messageType = typeEl.GetString() ?? "unknown";
 
                     var from = msg.GetProperty("from").GetString();
                     var messageId = msg.GetProperty("id").GetString();
                     var timestamp = msg.GetProperty("timestamp").GetString();
-                    var text = msg.GetProperty("text").GetProperty("body").GetString();
 
-                    if (string.IsNullOrWhiteSpace(text)) continue;
+                    // Media messages carry an id we exchange for the bytes later, plus
+                    // an optional caption. Text lives under text.body.
+                    string? text = null;
+                    string? mediaId = null;
+                    string? mediaMime = null;
+                    string? mediaFileName = null;
+
+                    if (messageType == "text")
+                    {
+                        text = msg.GetProperty("text").GetProperty("body").GetString();
+                        if (string.IsNullOrWhiteSpace(text)) continue;
+                    }
+                    else if (msg.TryGetProperty(messageType, out var mediaEl)
+                             && mediaEl.ValueKind == JsonValueKind.Object)
+                    {
+                        mediaId = mediaEl.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+                        mediaMime = mediaEl.TryGetProperty("mime_type", out var mimeEl) ? mimeEl.GetString() : null;
+                        mediaFileName = mediaEl.TryGetProperty("filename", out var fnEl) ? fnEl.GetString() : null;
+                        text = mediaEl.TryGetProperty("caption", out var capEl) ? capEl.GetString() : null;
+
+                        if (mediaId == null)
+                        {
+                            logger.LogDebug("Skipping {Type} message with no media id", messageType);
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        // Reactions, system messages, unsupported types.
+                        logger.LogDebug("Skipping unsupported WhatsApp message type {Type}", messageType);
+                        continue;
+                    }
 
                     var sqsPayload = JsonSerializer.Serialize(new
                     {
@@ -115,7 +140,11 @@ public class WhatsAppWebhookService(
                         message_id = messageId,
                         text,
                         timestamp,
-                        profile_name = profileName
+                        profile_name = profileName,
+                        message_type = messageType,
+                        media_id = mediaId,
+                        media_mime = mediaMime,
+                        media_filename = mediaFileName
                     });
 
                     logger.LogInformation(

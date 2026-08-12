@@ -20,6 +20,8 @@ public class WhatsAppInboxService(
     FojiDbContext db,
     IEncryptionService encryption,
     IHttpClientFactory httpClientFactory,
+    IStorageService storage,
+    IContactService contacts,
     IConfiguration configuration,
     ILogger<WhatsAppInboxService> logger) : IWhatsAppInboxService
 {
@@ -31,7 +33,9 @@ public class WhatsAppInboxService(
     // ── Inbound ───────────────────────────────────────────────────────────────
 
     public async Task RecordInboundAsync(
-        int agentId, string phoneNumberId, string waId, string? profileName, string? wamId, string text)
+        int agentId, string phoneNumberId, string waId, string? profileName, string? wamId,
+        string text, string messageType = "text",
+        string? mediaS3Key = null, string? mediaContentType = null, string? mediaFileName = null)
     {
         // Meta retries webhooks and can batch up to 1000 updates — never store twice.
         if (!string.IsNullOrEmpty(wamId)
@@ -61,6 +65,19 @@ public class WhatsAppInboxService(
                 LastInboundAt = now,
                 UnreadCount = 0,
             };
+
+            // Fold the sender into the CRM on first contact, deduped by phone —
+            // the same path widget leads take, so inbox traffic builds the CRM too.
+            try
+            {
+                conversation.ContactId = await contacts.FindOrCreateContactAsync(
+                    agent.CompanyId, profileName, null, waId, "whatsapp");
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Could not link WhatsApp conversation to a CRM contact");
+            }
+
             db.WhatsAppConversations.Add(conversation);
         }
         else
@@ -80,6 +97,10 @@ public class WhatsAppInboxService(
             Conversation = conversation,
             Direction = MessageDirection.Inbound,
             Body = text,
+            MessageType = messageType,
+            MediaS3Key = mediaS3Key,
+            MediaContentType = mediaContentType,
+            MediaFileName = mediaFileName,
             WamId = wamId,
         });
 
@@ -112,6 +133,8 @@ public class WhatsAppInboxService(
                 c.ContactWaId,
                 c.ContactName,
                 c.ContactId,
+                c.AssignedUserId,
+                c.AssignedUser != null ? (c.AssignedUser.FirstName + " " + c.AssignedUser.LastName).Trim() : null,
                 c.Messages.OrderByDescending(m => m.CreatedAt).Select(m => m.Body).FirstOrDefault(),
                 c.LastMessageAt,
                 c.LastInboundAt,
@@ -128,19 +151,48 @@ public class WhatsAppInboxService(
             .Where(c => c.CompanyId == companyId && c.Id == conversationId)
             .Select(c => new InboxConversationItem(
                 c.Id, c.AgentId, c.Agent.Name, c.ContactWaId, c.ContactName, c.ContactId,
+                c.AssignedUserId,
+                c.AssignedUser != null ? (c.AssignedUser.FirstName + " " + c.AssignedUser.LastName).Trim() : null,
                 null, c.LastMessageAt, c.LastInboundAt, c.UnreadCount,
                 c.LastInboundAt != null && c.LastInboundAt > cutoff))
             .FirstOrDefaultAsync();
 
         if (conversation == null) return null;
 
-        var messages = await db.WhatsAppMessages
+        var rows = await db.WhatsAppMessages
             .Where(m => m.ConversationId == conversationId && m.CompanyId == companyId)
             .OrderBy(m => m.CreatedAt)
             .Take(500)
-            .Select(m => new InboxMessageItem(
-                m.Id, m.Direction.ToString(), m.Body, m.SentByUserId, m.SenderDisplayName, m.CreatedAt))
+            .Select(m => new
+            {
+                m.Id, m.Direction, m.Body, m.MessageType,
+                m.MediaS3Key, m.MediaContentType, m.MediaFileName,
+                m.SentByUserId, m.SenderDisplayName, m.CreatedAt
+            })
             .ToListAsync();
+
+        // Media is served through short-lived presigned URLs; the bucket stays private.
+        var messages = new List<InboxMessageItem>(rows.Count);
+        foreach (var m in rows)
+        {
+            string? url = null;
+            if (!string.IsNullOrEmpty(m.MediaS3Key))
+            {
+                try
+                {
+                    url = await storage.GetPresignedUrlAsync(m.MediaS3Key, TimeSpan.FromMinutes(30));
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Could not presign WhatsApp media {Key}", m.MediaS3Key);
+                }
+            }
+
+            messages.Add(new InboxMessageItem(
+                m.Id, m.Direction.ToString(), m.Body, m.MessageType,
+                url, m.MediaContentType, m.MediaFileName,
+                m.SentByUserId, m.SenderDisplayName, m.CreatedAt));
+        }
 
         return new InboxThreadResult(conversation, messages);
     }
@@ -152,6 +204,27 @@ public class WhatsAppInboxService(
         if (conversation == null || conversation.UnreadCount == 0) return;
         conversation.UnreadCount = 0;
         await db.SaveChangesAsync();
+    }
+
+    public async Task<InboxConversationItem?> AssignAsync(int companyId, int conversationId, int? userId)
+    {
+        var conversation = await db.WhatsAppConversations
+            .FirstOrDefaultAsync(c => c.CompanyId == companyId && c.Id == conversationId);
+        if (conversation == null) return null;
+
+        if (userId.HasValue)
+        {
+            var isMember = await db.UserCompanies
+                .AnyAsync(uc => uc.CompanyId == companyId && uc.UserId == userId.Value && uc.IsActive);
+            if (!isMember)
+                throw new DomainException("That user is not an active member of this company.");
+        }
+
+        conversation.AssignedUserId = userId;
+        await db.SaveChangesAsync();
+
+        var items = await GetConversationsAsync(companyId);
+        return items.FirstOrDefault(x => x.Id == conversationId);
     }
 
     // ── Outbound ──────────────────────────────────────────────────────────────
@@ -195,7 +268,8 @@ public class WhatsAppInboxService(
         await db.SaveChangesAsync();
 
         return new InboxMessageItem(
-            message.Id, message.Direction.ToString(), message.Body,
+            message.Id, message.Direction.ToString(), message.Body, message.MessageType,
+            null, null, null,
             message.SentByUserId, message.SenderDisplayName, message.CreatedAt);
     }
 

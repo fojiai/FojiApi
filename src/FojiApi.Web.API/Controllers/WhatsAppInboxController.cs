@@ -45,6 +45,14 @@ public class WhatsAppInboxController(
         return NoContent();
     }
 
+    [HttpPost("conversations/{id:int}/assign")]
+    public async Task<IActionResult> Assign([FromRoute] int id, [FromBody] AssignRequest req)
+    {
+        EnsureCompanyAccess(req.CompanyId);
+        var updated = await inbox.AssignAsync(req.CompanyId, id, req.UserId);
+        return updated == null ? NotFound() : Ok(updated);
+    }
+
     /// <summary>Called by foji-worker when a number is in Inbox mode. Not user-facing.</summary>
     [HttpPost("internal/inbound")]
     [AllowAnonymous]
@@ -61,7 +69,8 @@ public class WhatsAppInboxController(
         }
 
         await inbox.RecordInboundAsync(
-            req.AgentId, req.PhoneNumberId, req.WaId, req.ProfileName, req.WamId, req.Text);
+            req.AgentId, req.PhoneNumberId, req.WaId, req.ProfileName, req.WamId, req.Text,
+            req.MessageType ?? "text", req.MediaS3Key, req.MediaContentType, req.MediaFileName);
         return NoContent();
     }
 
@@ -81,11 +90,17 @@ public record ReplyRequest(
 
 public record MarkReadRequest(int CompanyId);
 
+public record AssignRequest(int CompanyId, int? UserId);
+
 public record RecordInboundRequest(
     int AgentId,
     string PhoneNumberId,
     string WaId,
     string? ProfileName,
     string? WamId,
-    string Text
+    string Text,
+    string? MessageType,
+    string? MediaS3Key,
+    string? MediaContentType,
+    string? MediaFileName
 );
