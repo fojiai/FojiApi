@@ -35,7 +35,7 @@ public class AgentsController(IAgentService agentService, ICurrentUserService cu
     {
         var existing = await agentService.GetAgentAsync(id);
         EnsureCompanyAccess(existing.CompanyId, CompanyRole.Admin);
-        return Ok(await agentService.UpdateAgentAsync(id, req.Name, req.Description, req.UserPrompt, req.IsActive, req.AgentLanguage, req.WhatsAppEnabled, req.WhatsAppPhoneNumberId, req.SupportWhatsAppNumber, req.SalesWhatsAppNumber, req.SupportEmail, req.SalesEmail, req.WelcomeMessage, req.ConversationStarters, req.WidgetPrimaryColor, req.WidgetTitle, req.WidgetPlaceholder, req.WidgetPosition, req.ResponseStyle, req.LeadCaptureEnabled, req.LeadCapturePrompt, req.HandoffEnabled, req.HandoffNotifyEmail, req.HandoffNotifyWhatsApp, req.HandoffMessage, req.WhatsAppAccessToken));
+        return Ok(await agentService.UpdateAgentAsync(id, req.Name, req.Description, req.UserPrompt, req.IsActive, req.AgentLanguage, req.WhatsAppEnabled, req.WhatsAppPhoneNumberId, req.SupportWhatsAppNumber, req.SalesWhatsAppNumber, req.SupportEmail, req.SalesEmail, req.WelcomeMessage, req.ConversationStarters, req.WidgetPrimaryColor, req.WidgetTitle, req.WidgetPlaceholder, req.WidgetPosition, req.ResponseStyle, req.LeadCaptureEnabled, req.LeadCapturePrompt, req.HandoffEnabled, req.HandoffNotifyEmail, req.HandoffNotifyWhatsApp, req.HandoffMessage, req.WhatsAppAccessToken, req.WhatsAppMode));
     }
 
     [HttpDelete("{id:int}")]
@@ -162,5 +162,8 @@ public record UpdateAgentRequest(
     string? HandoffMessage,
 
     [param: System.ComponentModel.DataAnnotations.StringLength(512)]
-    string? WhatsAppAccessToken
+    string? WhatsAppAccessToken,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(20)]
+    string? WhatsAppMode
 );

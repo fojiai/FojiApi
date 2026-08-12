@@ -56,7 +56,8 @@ public class AgentService(
             agent.HandoffNotifyWhatsApp, agent.HandoffMessage,
             calendarActive,
             calendarActive ? agent.CalendarConnection!.GoogleAccountEmail : null,
-            !string.IsNullOrEmpty(agent.WhatsAppAccessTokenEncrypted)
+            !string.IsNullOrEmpty(agent.WhatsAppAccessTokenEncrypted),
+            agent.WhatsAppMode.ToString()
         );
     }
 
@@ -102,7 +103,7 @@ public class AgentService(
         string? widgetPrimaryColor, string? widgetTitle, string? widgetPlaceholder, string? widgetPosition,
         string? responseStyle, bool? leadCaptureEnabled, string? leadCapturePrompt,
         bool? handoffEnabled, string? handoffNotifyEmail, string? handoffNotifyWhatsApp, string? handoffMessage,
-        string? whatsAppAccessToken = null)
+        string? whatsAppAccessToken = null, string? whatsAppMode = null)
     {
         var agent = await db.Agents.FindAsync(agentId)
             ?? throw new NotFoundException("Agent not found.");
@@ -127,6 +128,13 @@ public class AgentService(
         }
 
         if (whatsAppPhoneNumberId != null) agent.WhatsAppPhoneNumberId = whatsAppPhoneNumberId;
+
+        if (whatsAppMode != null)
+        {
+            if (!Enum.TryParse<WhatsAppMode>(whatsAppMode, true, out var mode))
+                throw new DomainException($"Invalid WhatsApp mode: {whatsAppMode}. Valid values: Agent, Inbox.");
+            agent.WhatsAppMode = mode;
+        }
 
         // WhatsApp access token — encrypt at rest; empty string clears it. Never returned to clients.
         if (whatsAppAccessToken != null)
