@@ -4,8 +4,22 @@ using FojiApi.Core.Exceptions;
 
 namespace FojiApi.Web.API.Middleware;
 
-public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExceptionMiddleware> logger, IHostEnvironment env)
+public class GlobalExceptionMiddleware(
+    RequestDelegate next,
+    ILogger<GlobalExceptionMiddleware> logger,
+    IHostEnvironment env,
+    IConfiguration configuration)
 {
+    /// <summary>
+    /// Deployed environments run as Production, so IsDevelopment() is false and a
+    /// 500 comes back with no detail at all — leaving nothing to debug from
+    /// without CloudWatch. Debug:ExposeErrorDetail opts a non-production
+    /// environment into returning the exception. Defaults to false; never enable
+    /// it on a tenant-facing deployment, as stack traces leak internals.
+    /// </summary>
+    private bool ExposeErrorDetail =>
+        env.IsDevelopment() || configuration.GetValue<bool?>("Debug:ExposeErrorDetail") == true;
+
     public async Task InvokeAsync(HttpContext context)
     {
         try
@@ -42,7 +56,7 @@ public class GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExcep
         var response = new ErrorResponse(
             Error: message,
             TraceId: traceId,
-            Detail: env.IsDevelopment() && statusCode == HttpStatusCode.InternalServerError ? ex.ToString() : null
+            Detail: ExposeErrorDetail && statusCode == HttpStatusCode.InternalServerError ? ex.ToString() : null
         );
 
         var json = JsonSerializer.Serialize(response, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });

@@ -2,6 +2,7 @@ using FojiApi.Core.Entities;
 using FojiApi.Core.Enums;
 using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
+using FojiApi.Core.Utilities;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -44,7 +45,7 @@ public class CrmTaskService(FojiDbContext db) : ICrmTaskService
             Type = input.Type,
             Priority = input.Priority,
             Status = CrmTaskStatus.Open,
-            DueAt = input.DueAt,
+            DueAt = DateTimeUtc.Normalize(input.DueAt),
             AssigneeUserId = input.AssigneeUserId,
         };
         db.CrmTasks.Add(task);
@@ -65,7 +66,7 @@ public class CrmTaskService(FojiDbContext db) : ICrmTaskService
         task.Description = input.Description;
         task.Type = input.Type;
         task.Priority = input.Priority;
-        task.DueAt = input.DueAt;
+        task.DueAt = DateTimeUtc.Normalize(input.DueAt);
         task.AssigneeUserId = input.AssigneeUserId;
 
         await db.SaveChangesAsync();

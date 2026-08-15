@@ -2,6 +2,7 @@ using FojiApi.Core.Entities;
 using FojiApi.Core.Enums;
 using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
+using FojiApi.Core.Utilities;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -82,7 +83,7 @@ public class DealService(FojiDbContext db, IPipelineService pipelineService) : I
             Title = input.Title.Trim(),
             Value = input.Value,
             Currency = string.IsNullOrWhiteSpace(input.Currency) ? "BRL" : input.Currency!.Trim().ToUpperInvariant(),
-            ExpectedCloseDate = input.ExpectedCloseDate,
+            ExpectedCloseDate = DateTimeUtc.Normalize(input.ExpectedCloseDate),
         };
         ApplyStageStatus(deal, stage);
         db.Deals.Add(deal);
@@ -113,7 +114,7 @@ public class DealService(FojiDbContext db, IPipelineService pipelineService) : I
         deal.Title = input.Title.Trim();
         deal.Value = input.Value;
         if (!string.IsNullOrWhiteSpace(input.Currency)) deal.Currency = input.Currency!.Trim().ToUpperInvariant();
-        deal.ExpectedCloseDate = input.ExpectedCloseDate;
+        deal.ExpectedCloseDate = DateTimeUtc.Normalize(input.ExpectedCloseDate);
 
         await db.SaveChangesAsync();
         return await GetDealAsync(companyId, dealId);

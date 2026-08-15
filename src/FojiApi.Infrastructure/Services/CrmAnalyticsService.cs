@@ -88,13 +88,21 @@ public class CrmAnalyticsService(FojiDbContext db) : ICrmAnalyticsService
         var totalContacts = await db.Contacts.CountAsync(c => c.CompanyId == companyId);
         var newContacts = await db.Contacts.CountAsync(c => c.CompanyId == companyId && c.CreatedAt >= since);
 
-        var sources = await db.Contacts
+        // Group and order with anonymous types only. Projecting straight into the
+        // record and then ordering by one of its members is not reliably
+        // translatable, so the labelling happens in memory.
+        var sourceRows = await db.Contacts
             .Where(c => c.CompanyId == companyId && c.CreatedAt >= since)
-            .GroupBy(c => c.Source ?? "unknown")
-            .Select(g => new SourceBreakdownResult(g.Key, g.Count()))
-            .OrderByDescending(x => x.Contacts)
+            .GroupBy(c => c.Source)
+            .Select(g => new { Source = g.Key, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
             .Take(8)
             .ToListAsync();
+
+        var sources = sourceRows
+            .Select(x => new SourceBreakdownResult(
+                string.IsNullOrWhiteSpace(x.Source) ? "unknown" : x.Source, x.Count))
+            .ToList();
 
         // ── Tasks ────────────────────────────────────────────────────────────
         var openTasks = await db.CrmTasks
