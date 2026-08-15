@@ -50,12 +50,20 @@ public class CurrentUserService(IHttpContextAccessor httpContextAccessor) : ICur
         return (int)role.Value <= (int)minimumRole;
     }
 
+    // JwtService writes the claim from an anonymous object, so the JSON is
+    // camelCase ("companyId"/"role") while CompanyRoleClaim is PascalCase.
+    // System.Text.Json is case-sensitive by default, so without this every
+    // element deserialized to (0, null) and the user ended up with no roles at
+    // all — a 403 on every company-scoped endpoint.
+    private static readonly JsonSerializerOptions ClaimJsonOptions =
+        new() { PropertyNameCaseInsensitive = true };
+
     public IEnumerable<(int CompanyId, CompanyRole Role)> GetAllCompanyRoles()
     {
         var companiesClaim = _user?.FindFirst("companies")?.Value;
         if (string.IsNullOrEmpty(companiesClaim)) yield break;
 
-        var companies = JsonSerializer.Deserialize<List<CompanyRoleClaim>>(companiesClaim);
+        var companies = JsonSerializer.Deserialize<List<CompanyRoleClaim>>(companiesClaim, ClaimJsonOptions);
         if (companies == null) yield break;
 
         foreach (var c in companies)
