@@ -72,14 +72,18 @@ public enum DealStatus
     Lost
 }
 
-/// <summary>Kind of CRM follow-up task.</summary>
+/// <summary>Kind of CRM follow-up task. Stored as a string, so adding a member
+/// needs no migration — but never rename one, that would orphan existing rows.</summary>
 public enum CrmTaskType
 {
     General,
     Call,
     Email,
     WhatsApp,
-    Meeting
+    Meeting,
+    Presentation,
+    Visit,
+    FollowUp
 }
 
 public enum CrmTaskPriority
