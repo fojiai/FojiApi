@@ -152,10 +152,10 @@ public class AgentService(
                 // A missing or malformed GoogleCalendar:EncryptionKey is a server
                 // misconfiguration, not a crash. Surfaced as a 400 with a real
                 // sentence so it doesn't read as "unexpected error occurred".
-                logger.LogError(ex, "Cannot encrypt the WhatsApp access token for agent {AgentId} — check GoogleCalendar:EncryptionKey", agentId);
+                logger.LogError(ex, "Cannot encrypt the WhatsApp access token for agent {AgentId} — check Encryption:Key", agentId);
                 throw new DomainException(
                     "The WhatsApp access token could not be stored: this server's encryption key is missing or invalid. "
-                    + "An administrator must configure GoogleCalendar:EncryptionKey (base64, 32 bytes).");
+                    + "An administrator must configure Encryption:Key (base64, 32 bytes).");
             }
         }
 
