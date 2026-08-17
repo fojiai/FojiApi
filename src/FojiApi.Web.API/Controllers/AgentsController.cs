@@ -161,7 +161,9 @@ public record UpdateAgentRequest(
     [param: System.ComponentModel.DataAnnotations.StringLength(500)]
     string? HandoffMessage,
 
-    [param: System.ComponentModel.DataAnnotations.StringLength(512)]
+    // Meta system-user tokens have no documented length bound and run well past
+    // 512 chars. The column is `text`, so the cap is only an abuse guard.
+    [param: System.ComponentModel.DataAnnotations.StringLength(4096)]
     string? WhatsAppAccessToken,
 
     [param: System.ComponentModel.DataAnnotations.StringLength(20)]
