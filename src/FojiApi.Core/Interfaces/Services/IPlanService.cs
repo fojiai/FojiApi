@@ -40,7 +40,9 @@ public record UpsertPlanRequest(
     /// <summary>Outbound WhatsApp messages included. -1 uncapped, 0 none.</summary>
     int WhatsAppMessagesPerMonth = 0,
     /// <summary>Centavos per message past the allowance. 0 stops instead of billing.</summary>
-    int WhatsAppOverageCentavos = 0);
+    int WhatsAppOverageCentavos = 0,
+    /// <summary>Marketing templates cost ~9x utility and are off unless deliberately enabled.</summary>
+    bool WhatsAppAllowMarketing = false);
 
 public record PlanResult(
     int Id,
@@ -63,4 +65,5 @@ public record PlanResult(
     bool IsActive,
     int? CustomForCompanyId,
     int WhatsAppMessagesPerMonth,
-    int WhatsAppOverageCentavos);
+    int WhatsAppOverageCentavos,
+    bool WhatsAppAllowMarketing);

@@ -47,6 +47,7 @@ public class PlanService(FojiDbContext db) : IPlanService
             MaxMessagesPerMonth = req.MaxMessagesPerMonth,
             WhatsAppMessagesPerMonth = req.WhatsAppMessagesPerMonth,
             WhatsAppOverageCentavos = req.WhatsAppOverageCentavos,
+            WhatsAppAllowMarketing = req.WhatsAppAllowMarketing,
             TrialDays = req.TrialDays,
             IsActive = req.IsActive,
             IsPublic = req.IsPublic,
@@ -78,6 +79,7 @@ public class PlanService(FojiDbContext db) : IPlanService
         plan.MaxMessagesPerMonth = req.MaxMessagesPerMonth;
         plan.WhatsAppMessagesPerMonth = req.WhatsAppMessagesPerMonth;
         plan.WhatsAppOverageCentavos = req.WhatsAppOverageCentavos;
+        plan.WhatsAppAllowMarketing = req.WhatsAppAllowMarketing;
         plan.TrialDays = req.TrialDays;
         plan.IsActive = req.IsActive;
         plan.IsPublic = req.IsPublic;
@@ -108,5 +110,5 @@ public class PlanService(FojiDbContext db) : IPlanService
         => new(p.Id, p.Name, p.Slug, p.Description, p.MonthlyPrice, p.Currency, p.StripePriceId, p.MaxAgents, p.MaxMembers,
                p.HasWhatsApp, p.HasEscalationContacts, p.HasGoogleCalendar, p.HasCrm, p.MaxConversationsPerMonth, p.MaxMessagesPerMonth,
                p.TrialDays, p.IsPublic, p.IsActive, p.CustomForCompanyId,
-               p.WhatsAppMessagesPerMonth, p.WhatsAppOverageCentavos);
+               p.WhatsAppMessagesPerMonth, p.WhatsAppOverageCentavos, p.WhatsAppAllowMarketing);
 }

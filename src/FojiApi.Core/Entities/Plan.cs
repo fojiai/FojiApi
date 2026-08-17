@@ -23,6 +23,14 @@ public class Plan : BaseEntity
     /// <summary>Price per message beyond the allowance, in centavos. 0 means the
     /// agent stops replying at the limit instead of running up a bill.</summary>
     public int WhatsAppOverageCentavos { get; set; } = 0;
+    /// <summary>
+    /// Whether this plan may send marketing templates. Off by default and for
+    /// everyone: marketing costs roughly 9x a utility message in Brazil, it is
+    /// the one category with no free window, and Foji is a support and sales
+    /// agent rather than a campaign tool. Turning this on for a customer is a
+    /// deliberate act, not a default.
+    /// </summary>
+    public bool WhatsAppAllowMarketing { get; set; } = false;
     public bool HasEscalationContacts { get; set; } = false;
     public bool HasGoogleCalendar { get; set; } = false;
     public bool HasCrm { get; set; } = false;

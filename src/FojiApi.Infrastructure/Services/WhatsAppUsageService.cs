@@ -29,6 +29,18 @@ public class WhatsAppUsageService(
         WhatsAppMessageCategory category = WhatsAppMessageCategory.Service,
         CancellationToken ct = default)
     {
+        // Marketing is refused before anything else. It is ~9x the cost of a
+        // utility message, it is never free inside the 24h window, and a single
+        // campaign can dwarf a month of ordinary replies on the bill.
+        if (category == WhatsAppMessageCategory.Marketing && !await MarketingAllowedAsync(companyId, ct))
+        {
+            logger.LogWarning(
+                "Blocked a marketing template for company {CompanyId} — not enabled on this plan",
+                companyId);
+            var blocked = await GetUsageAsync(companyId, ct);
+            return new WhatsAppConsumeResult(false, blocked.Used, blocked.Limit, blocked.Unlimited, blocked.OverageMessages);
+        }
+
         var usage = await GetUsageAsync(companyId, ct);
 
         if (!usage.CanSend)
@@ -121,6 +133,14 @@ public class WhatsAppUsageService(
             ? (0, true, 0)
             : (plan.WhatsAppMessagesPerMonth, false, plan.WhatsAppOverageCentavos);
     }
+
+    private async Task<bool> MarketingAllowedAsync(int companyId, CancellationToken ct)
+        => await db.Subscriptions
+            .Where(s => s.CompanyId == companyId
+                        && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
+            .OrderByDescending(s => s.CreatedAt)
+            .Select(s => s.Plan.WhatsAppAllowMarketing)
+            .FirstOrDefaultAsync(ct);
 
     /// <summary>
     /// Align the meter with what the customer is billed for. Falls back to the

@@ -235,6 +235,10 @@ public class WhatsAppInboxService(
         if (string.IsNullOrWhiteSpace(text))
             throw new DomainException("A message is required.");
 
+        // The inbox only ever sends free-form replies inside the 24h window.
+        // Templates — and marketing templates in particular — have no path here
+        // by construction, and the meter refuses the category anyway.
+
         var conversation = await db.WhatsAppConversations
             .Include(c => c.Agent)
             .FirstOrDefaultAsync(c => c.CompanyId == companyId && c.Id == conversationId)
