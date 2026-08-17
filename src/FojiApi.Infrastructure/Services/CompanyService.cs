@@ -4,10 +4,15 @@ using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace FojiApi.Infrastructure.Services;
 
-public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailService emailService) : ICompanyService
+public class CompanyService(
+    FojiDbContext db,
+    IJwtService jwtService,
+    IEmailService emailService,
+    ILogger<CompanyService> logger) : ICompanyService
 {
     /// <summary>How many companies one user may own via self-serve signup.</summary>
     private const int MaxSelfServeCompaniesPerUser = 3;
@@ -235,9 +240,8 @@ public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailServ
         if (membership == null || membership.Role != CompanyRole.Owner)
             throw new ForbiddenException("Only the company owner can delete the company.");
 
-        // Remove related entities — EF cascade handles the rest via FK constraints,
-        // but we need to explicitly cancel Stripe subscriptions first if active.
-        // (Stripe webhook will re-sync, but we also cancel in DB immediately.)
+        // Cancel active subscriptions first. (The Stripe webhook re-syncs, but we
+        // also cancel in the DB immediately so nothing keeps billing.)
         var activeSubs = await db.Subscriptions
             .Where(s => s.CompanyId == companyId &&
                         (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
@@ -247,8 +251,37 @@ public class CompanyService(FojiDbContext db, IJwtService jwtService, IEmailServ
             sub.Status = SubscriptionStatus.Canceled;
             sub.CanceledAt = DateTime.UtcNow;
         }
+        await db.SaveChangesAsync();
 
+        // Cascade does NOT cover the whole company. Eight company-scoped
+        // entities are mapped DeleteBehavior.Restrict — Contact, Deal, Lead,
+        // HandoffEvent, CrmTask, Meeting, EmailLog and WhatsAppConversation —
+        // so removing a company that has any CRM or WhatsApp history raises a
+        // foreign key violation. They have to go first, deepest dependency
+        // outwards, and the whole thing has to be one transaction: a failure
+        // halfway through would otherwise leave a gutted but existing company.
+        await using var tx = await db.Database.BeginTransactionAsync();
+
+        await db.DealStageHistory.Where(x => x.CompanyId == companyId).ExecuteDeleteAsync();
+        await db.CrmTasks.Where(x => x.CompanyId == companyId).ExecuteDeleteAsync();
+        await db.Meetings.Where(x => x.CompanyId == companyId).ExecuteDeleteAsync();
+        await db.WhatsAppMessages.Where(x => x.CompanyId == companyId).ExecuteDeleteAsync();
+        await db.WhatsAppConversations.Where(x => x.CompanyId == companyId).ExecuteDeleteAsync();
+        await db.Deals.Where(x => x.CompanyId == companyId).ExecuteDeleteAsync();
+        await db.Leads.Where(x => x.CompanyId == companyId).ExecuteDeleteAsync();
+        await db.HandoffEvents.Where(x => x.CompanyId == companyId).ExecuteDeleteAsync();
+        // ContactTag cascades from Contact, so it goes with it.
+        await db.Contacts.Where(x => x.CompanyId == companyId).ExecuteDeleteAsync();
+        await db.EmailLogs.Where(x => x.CompanyId == companyId).ExecuteDeleteAsync();
+
+        // The rest — agents (and their files), subscriptions, invitations,
+        // memberships, pipelines and daily stats — are mapped Cascade.
         db.Companies.Remove(company);
         await db.SaveChangesAsync();
+
+        await tx.CommitAsync();
+
+        logger.LogInformation(
+            "Company {CompanyId} deleted by user {UserId}", companyId, requestingUserId);
     }
 }
