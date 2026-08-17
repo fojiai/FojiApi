@@ -41,6 +41,20 @@ public class WhatsAppOnboardingController(
     }
 
     /// <summary>
+    /// Forces a token refresh now. Super admin only — this exists so the
+    /// refresh path can be proven against Meta in seconds instead of waiting
+    /// 45 days for the sweep to reach an agent naturally.
+    /// </summary>
+    [HttpPost("refresh")]
+    public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequest req)
+    {
+        if (!CurrentUser.IsSuperAdmin) throw new ForbiddenException();
+
+        var ok = await onboarding.RefreshTokenAsync(req.AgentId);
+        return Ok(new { refreshed = ok });
+    }
+
+    /// <summary>
     /// Called by foji-worker when Meta rejects our token for a tenant. Not
     /// user-facing — a dead connection has to surface somewhere, and the send
     /// path is where we usually find out first.
@@ -70,6 +84,8 @@ public class WhatsAppOnboardingController(
 }
 
 public record NeedsReconnectRequest(int AgentId);
+
+public record RefreshTokenRequest(int AgentId);
 
 public record CompleteOnboardingRequest(
     int CompanyId,
