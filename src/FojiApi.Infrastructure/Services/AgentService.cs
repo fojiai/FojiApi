@@ -61,7 +61,8 @@ public class AgentService(
             !string.IsNullOrEmpty(agent.WhatsAppAccessTokenEncrypted),
             agent.WhatsAppMode.ToString(),
             agent.WhatsAppNeedsReconnect,
-            agent.WhatsAppTokenExpiresAt
+            agent.WhatsAppTokenExpiresAt,
+            agent.WhatsAppBillingIssue
         );
     }
 

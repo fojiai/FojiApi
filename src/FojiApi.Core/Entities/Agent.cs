@@ -32,6 +32,13 @@ public class Agent : BaseEntity
     /// failed, or a send came back unauthorized. The UI asks the owner to
     /// reconnect, so a dead channel announces itself instead of going quiet.</summary>
     public bool WhatsAppNeedsReconnect { get; set; }
+    /// <summary>
+    /// Meta is refusing to deliver because the customer's WhatsApp Business
+    /// Account has no usable payment method (error 131042). Deliberately
+    /// separate from NeedsReconnect: reconnecting does nothing here, and telling
+    /// someone to reconnect when they need to add a card is worse than silence.
+    /// </summary>
+    public bool WhatsAppBillingIssue { get; set; }
     /// <summary>Agent = the AI replies automatically; Inbox = humans reply from the shared inbox.</summary>
     public WhatsAppMode WhatsAppMode { get; set; } = WhatsAppMode.Agent;
 

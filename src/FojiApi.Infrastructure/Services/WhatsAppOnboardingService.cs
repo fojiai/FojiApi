@@ -78,6 +78,7 @@ public class WhatsAppOnboardingService(
         agent.WhatsAppPinEncrypted = encryption.Encrypt(pin);
         agent.WhatsAppTokenExpiresAt = expiresAt;
         agent.WhatsAppNeedsReconnect = false;
+        agent.WhatsAppBillingIssue = false;
         agent.WhatsAppEnabled = true;
         await db.SaveChangesAsync();
 

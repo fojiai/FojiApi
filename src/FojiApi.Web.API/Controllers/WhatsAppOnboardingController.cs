@@ -77,13 +77,21 @@ public class WhatsAppOnboardingController(
 
         var agent = await db.Agents.FirstOrDefaultAsync(a => a.Id == req.AgentId);
         if (agent == null) return NotFound();
-        agent.WhatsAppNeedsReconnect = true;
+
+        // Two different dead ends with two different fixes: a dead token needs a
+        // reconnect, a missing card needs Meta Business Manager. Conflating them
+        // sends the customer to the wrong place.
+        if (string.Equals(req.Reason, "billing", StringComparison.OrdinalIgnoreCase))
+            agent.WhatsAppBillingIssue = true;
+        else
+            agent.WhatsAppNeedsReconnect = true;
+
         await db.SaveChangesAsync();
         return NoContent();
     }
 }
 
-public record NeedsReconnectRequest(int AgentId);
+public record NeedsReconnectRequest(int AgentId, string? Reason);
 
 public record RefreshTokenRequest(int AgentId);
 
