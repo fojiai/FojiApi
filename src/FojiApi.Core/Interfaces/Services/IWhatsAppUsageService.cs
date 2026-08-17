@@ -35,11 +35,25 @@ public enum WhatsAppMessageCategory
 /// <param name="Limit">Messages included in the plan. 0 means WhatsApp is not sold to this company.</param>
 /// <param name="Unlimited">True when the plan grants an uncapped allowance.</param>
 public record WhatsAppUsageResult(
-    int Used, int Limit, bool Unlimited, DateOnly PeriodStart, DateOnly PeriodEnd)
+    int Used, int Limit, bool Unlimited, DateOnly PeriodStart, DateOnly PeriodEnd,
+    int OverageCentavos = 0)
 {
     public int Remaining => Unlimited ? int.MaxValue : Math.Max(0, Limit - Used);
     public bool OverLimit => !Unlimited && Used >= Limit;
+
+    /// <summary>Messages sent beyond the allowance, which are billable as overage.</summary>
+    public int OverageMessages => Unlimited ? 0 : Math.Max(0, Used - Limit);
+
+    /// <summary>What the overage is worth this period, in centavos.</summary>
+    public int OverageOwedCentavos => OverageMessages * OverageCentavos;
+
+    /// <summary>
+    /// Whether a further send is permitted. A plan with no overage price stops
+    /// at the limit — silence is recoverable, a surprise invoice is not.
+    /// </summary>
+    public bool CanSend => !OverLimit || OverageCentavos > 0;
 }
 
 /// <param name="Allowed">False when the send should not happen.</param>
-public record WhatsAppConsumeResult(bool Allowed, int Used, int Limit, bool Unlimited);
+public record WhatsAppConsumeResult(
+    bool Allowed, int Used, int Limit, bool Unlimited, int OverageMessages = 0);

@@ -20,6 +20,9 @@ public class Plan : BaseEntity
     /// Meta bills per message, so this — not the conversation count — is what
     /// bounds our cost. -1 means uncapped; 0 means none.</summary>
     public int WhatsAppMessagesPerMonth { get; set; } = 0;
+    /// <summary>Price per message beyond the allowance, in centavos. 0 means the
+    /// agent stops replying at the limit instead of running up a bill.</summary>
+    public int WhatsAppOverageCentavos { get; set; } = 0;
     public bool HasEscalationContacts { get; set; } = false;
     public bool HasGoogleCalendar { get; set; } = false;
     public bool HasCrm { get; set; } = false;

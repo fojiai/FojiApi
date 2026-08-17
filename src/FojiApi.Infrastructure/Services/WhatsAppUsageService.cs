@@ -15,13 +15,13 @@ public class WhatsAppUsageService(
     public async Task<WhatsAppUsageResult> GetUsageAsync(int companyId, CancellationToken ct = default)
     {
         var (start, end) = await GetBillingPeriodAsync(companyId, ct);
-        var (limit, unlimited) = await GetAllowanceAsync(companyId, ct);
+        var (limit, unlimited, overageCentavos) = await GetAllowanceAsync(companyId, ct);
 
         var used = await db.WhatsAppUsageDays
             .Where(u => u.CompanyId == companyId && u.Date >= start && u.Date <= end)
             .SumAsync(u => u.ServiceMessages + u.UtilityMessages + u.MarketingMessages, ct);
 
-        return new WhatsAppUsageResult(used, limit, unlimited, start, end);
+        return new WhatsAppUsageResult(used, limit, unlimited, start, end, overageCentavos);
     }
 
     public async Task<WhatsAppConsumeResult> TryConsumeAsync(
@@ -31,16 +31,26 @@ public class WhatsAppUsageService(
     {
         var usage = await GetUsageAsync(companyId, ct);
 
-        if (usage.OverLimit)
+        if (!usage.CanSend)
         {
             logger.LogWarning(
-                "WhatsApp allowance exhausted for company {CompanyId}: {Used}/{Limit}",
+                "WhatsApp allowance exhausted for company {CompanyId}: {Used}/{Limit}, no overage price set",
                 companyId, usage.Used, usage.Limit);
-            return new WhatsAppConsumeResult(false, usage.Used, usage.Limit, usage.Unlimited);
+            return new WhatsAppConsumeResult(false, usage.Used, usage.Limit, usage.Unlimited, usage.OverageMessages);
+        }
+
+        if (usage.OverLimit)
+        {
+            // Past the allowance but the plan prices overage, so the agent keeps
+            // answering and the extra messages are billed rather than dropped.
+            logger.LogInformation(
+                "WhatsApp overage for company {CompanyId}: {Used}/{Limit} at {Centavos} centavos/message",
+                companyId, usage.Used, usage.Limit, usage.OverageCentavos);
         }
 
         await IncrementAsync(companyId, category, ct);
-        return new WhatsAppConsumeResult(true, usage.Used + 1, usage.Limit, usage.Unlimited);
+        var after = usage with { Used = usage.Used + 1 };
+        return new WhatsAppConsumeResult(true, after.Used, after.Limit, after.Unlimited, after.OverageMessages);
     }
 
     /// <summary>
@@ -91,21 +101,25 @@ public class WhatsAppUsageService(
     /// The plan's WhatsApp allowance. Zero means the company cannot send at all,
     /// which is the correct default for a plan that does not include WhatsApp.
     /// </summary>
-    private async Task<(int Limit, bool Unlimited)> GetAllowanceAsync(int companyId, CancellationToken ct)
+    private async Task<(int Limit, bool Unlimited, int OverageCentavos)> GetAllowanceAsync(
+        int companyId, CancellationToken ct)
     {
         var plan = await db.Subscriptions
             .Where(s => s.CompanyId == companyId
                         && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
             .OrderByDescending(s => s.CreatedAt)
-            .Select(s => new { s.Plan.HasWhatsApp, s.Plan.WhatsAppMessagesPerMonth })
+            .Select(s => new { s.Plan.HasWhatsApp, s.Plan.WhatsAppMessagesPerMonth, s.Plan.WhatsAppOverageCentavos })
             .FirstOrDefaultAsync(ct);
 
-        if (plan is null || !plan.HasWhatsApp) return (0, false);
+        // No WhatsApp on the plan means no sending, and no overage price can
+        // change that — they have not bought the channel.
+        if (plan is null || !plan.HasWhatsApp) return (0, false, 0);
+
         // -1 is the explicit "uncapped" marker; 0 means the plan sells WhatsApp
         // but grants no messages, which would be a misconfiguration.
         return plan.WhatsAppMessagesPerMonth < 0
-            ? (0, true)
-            : (plan.WhatsAppMessagesPerMonth, false);
+            ? (0, true, 0)
+            : (plan.WhatsAppMessagesPerMonth, false, plan.WhatsAppOverageCentavos);
     }
 
     /// <summary>

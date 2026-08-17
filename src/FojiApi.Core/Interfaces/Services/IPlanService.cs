@@ -36,7 +36,11 @@ public record UpsertPlanRequest(
     int TrialDays,
     bool IsActive,
     bool IsPublic,
-    int? CustomForCompanyId);
+    int? CustomForCompanyId,
+    /// <summary>Outbound WhatsApp messages included. -1 uncapped, 0 none.</summary>
+    int WhatsAppMessagesPerMonth = 0,
+    /// <summary>Centavos per message past the allowance. 0 stops instead of billing.</summary>
+    int WhatsAppOverageCentavos = 0);
 
 public record PlanResult(
     int Id,
@@ -57,4 +61,6 @@ public record PlanResult(
     int TrialDays,
     bool IsPublic,
     bool IsActive,
-    int? CustomForCompanyId);
+    int? CustomForCompanyId,
+    int WhatsAppMessagesPerMonth,
+    int WhatsAppOverageCentavos);
