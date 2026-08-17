@@ -1,7 +1,12 @@
+using System.Security.Cryptography;
+using System.Text;
 using FojiApi.Core.Enums;
 using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
+using FojiApi.Infrastructure.Data;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace FojiApi.Web.API.Controllers;
 
@@ -34,7 +39,37 @@ public class WhatsAppOnboardingController(
         var result = await onboarding.CompleteAsync(req.AgentId, req.Code, req.WabaId, req.PhoneNumberId);
         return Ok(result);
     }
+
+    /// <summary>
+    /// Called by foji-worker when Meta rejects our token for a tenant. Not
+    /// user-facing — a dead connection has to surface somewhere, and the send
+    /// path is where we usually find out first.
+    /// </summary>
+    [HttpPost("internal/needs-reconnect")]
+    [AllowAnonymous]
+    public async Task<IActionResult> FlagNeedsReconnect(
+        [FromBody] NeedsReconnectRequest req,
+        [FromHeader(Name = "X-Internal-Key")] string? internalKey,
+        [FromServices] IConfiguration configuration,
+        [FromServices] FojiDbContext db)
+    {
+        var expected = configuration["InternalApiKey"];
+        if (string.IsNullOrEmpty(expected) || string.IsNullOrEmpty(internalKey)
+            || !CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(internalKey), Encoding.UTF8.GetBytes(expected)))
+        {
+            throw new ForbiddenException();
+        }
+
+        var agent = await db.Agents.FirstOrDefaultAsync(a => a.Id == req.AgentId);
+        if (agent == null) return NotFound();
+        agent.WhatsAppNeedsReconnect = true;
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
 }
+
+public record NeedsReconnectRequest(int AgentId);
 
 public record CompleteOnboardingRequest(
     int CompanyId,

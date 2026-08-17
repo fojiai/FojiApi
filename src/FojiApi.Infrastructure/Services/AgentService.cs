@@ -59,7 +59,9 @@ public class AgentService(
             calendarActive,
             calendarActive ? agent.CalendarConnection!.GoogleAccountEmail : null,
             !string.IsNullOrEmpty(agent.WhatsAppAccessTokenEncrypted),
-            agent.WhatsAppMode.ToString()
+            agent.WhatsAppMode.ToString(),
+            agent.WhatsAppNeedsReconnect,
+            agent.WhatsAppTokenExpiresAt
         );
     }
 
@@ -146,6 +148,12 @@ public class AgentService(
                 agent.WhatsAppAccessTokenEncrypted = whatsAppAccessToken.Trim().Length > 0
                     ? encryption.Encrypt(whatsAppAccessToken.Trim())
                     : null;
+                // A hand-pasted token is a permanent System User token, so it has
+                // no expiry and must never be swept by the refresh job. Clearing
+                // the flag also gives the owner a way out if a refresh failure
+                // left the agent stuck.
+                agent.WhatsAppTokenExpiresAt = null;
+                agent.WhatsAppNeedsReconnect = false;
             }
             catch (Exception ex) when (ex is InvalidOperationException or FormatException)
             {
