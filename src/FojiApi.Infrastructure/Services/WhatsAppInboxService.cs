@@ -22,6 +22,7 @@ public class WhatsAppInboxService(
     IHttpClientFactory httpClientFactory,
     IStorageService storage,
     IContactService contacts,
+    IWhatsAppUsageService usage,
     IConfiguration configuration,
     ILogger<WhatsAppInboxService> logger) : IWhatsAppInboxService
 {
@@ -245,6 +246,14 @@ public class WhatsAppInboxService(
             throw new DomainException(
                 "This conversation is outside WhatsApp's 24-hour reply window. " +
                 "The customer needs to message again before you can reply.");
+
+        // Meter before sending. A human reply costs Meta exactly what an AI
+        // reply costs, so the inbox is not a cheaper channel and cannot be
+        // exempt from the allowance.
+        var consumed = await usage.TryConsumeAsync(companyId, WhatsAppMessageCategory.Service);
+        if (!consumed.Allowed)
+            throw new DomainException(
+                "This month's WhatsApp message allowance is used up. Upgrade the plan to keep replying on WhatsApp.");
 
         var displayName = await ResolveDisplayNameAsync(companyId, userId);
         var body = $"{displayName}:\n\n{text.Trim()}";

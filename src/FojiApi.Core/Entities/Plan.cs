@@ -15,7 +15,11 @@ public class Plan : BaseEntity
 
     /// <summary>Maximum team members (including owner) per company. 0 = unlimited.</summary>
     public int MaxMembers { get; set; } = 0;
-    public bool HasWhatsApp { get; set; } = false;
+    public bool HasWhatsApp { get; set; }
+    /// <summary>Outbound WhatsApp messages included per billing period.
+    /// Meta bills per message, so this — not the conversation count — is what
+    /// bounds our cost. -1 means uncapped; 0 means none.</summary>
+    public int WhatsAppMessagesPerMonth { get; set; } = 0;
     public bool HasEscalationContacts { get; set; } = false;
     public bool HasGoogleCalendar { get; set; } = false;
     public bool HasCrm { get; set; } = false;

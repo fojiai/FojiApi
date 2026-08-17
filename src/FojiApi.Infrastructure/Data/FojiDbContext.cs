@@ -34,6 +34,7 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
     public DbSet<EmailLog> EmailLogs => Set<EmailLog>();
     public DbSet<WhatsAppConversation> WhatsAppConversations => Set<WhatsAppConversation>();
     public DbSet<WhatsAppMessage> WhatsAppMessages => Set<WhatsAppMessage>();
+    public DbSet<WhatsAppUsageDay> WhatsAppUsageDays => Set<WhatsAppUsageDay>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -386,6 +387,12 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.HasOne(c => c.Agent).WithMany().HasForeignKey(c => c.AgentId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(c => c.Contact).WithMany().HasForeignKey(c => c.ContactId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(c => c.AssignedUser).WithMany().HasForeignKey(c => c.AssignedUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<WhatsAppUsageDay>(e =>
+        {
+            e.HasIndex(u => new { u.CompanyId, u.Date }).IsUnique();
+            e.HasOne(u => u.Company).WithMany().HasForeignKey(u => u.CompanyId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<WhatsAppMessage>(e =>
