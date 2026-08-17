@@ -19,6 +19,12 @@ public class Agent : BaseEntity
     // Per-tenant Meta Cloud API access token (AES-256-GCM, same scheme as calendar tokens).
     // Phase 0: pasted by the owner; Phase 1: populated by Embedded Signup. foji-worker decrypts to send.
     public string? WhatsAppAccessTokenEncrypted { get; set; }
+    /// <summary>The customer's WhatsApp Business Account, captured by Embedded Signup.
+    /// Needed to subscribe our app to their webhooks and to manage templates later.</summary>
+    public string? WhatsAppBusinessAccountId { get; set; }
+    /// <summary>Two-step PIN we set when registering their number on Cloud API.
+    /// Stored encrypted because re-registering the number requires it.</summary>
+    public string? WhatsAppPinEncrypted { get; set; }
     /// <summary>Agent = the AI replies automatically; Inbox = humans reply from the shared inbox.</summary>
     public WhatsAppMode WhatsAppMode { get; set; } = WhatsAppMode.Agent;
 
