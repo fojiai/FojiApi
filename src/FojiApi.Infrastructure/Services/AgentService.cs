@@ -5,6 +5,7 @@ using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace FojiApi.Infrastructure.Services;
 
@@ -12,7 +13,8 @@ public class AgentService(
     FojiDbContext db,
     IIndustryPromptService industryPromptService,
     IPlanEnforcementService planEnforcement,
-    IEncryptionService encryption) : IAgentService
+    IEncryptionService encryption,
+    ILogger<AgentService> logger) : IAgentService
 {
     public async Task<IEnumerable<AgentListItem>> GetAgentsAsync(int companyId)
     {
@@ -138,9 +140,24 @@ public class AgentService(
 
         // WhatsApp access token — encrypt at rest; empty string clears it. Never returned to clients.
         if (whatsAppAccessToken != null)
-            agent.WhatsAppAccessTokenEncrypted = whatsAppAccessToken.Trim().Length > 0
-                ? encryption.Encrypt(whatsAppAccessToken.Trim())
-                : null;
+        {
+            try
+            {
+                agent.WhatsAppAccessTokenEncrypted = whatsAppAccessToken.Trim().Length > 0
+                    ? encryption.Encrypt(whatsAppAccessToken.Trim())
+                    : null;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+            {
+                // A missing or malformed GoogleCalendar:EncryptionKey is a server
+                // misconfiguration, not a crash. Surfaced as a 400 with a real
+                // sentence so it doesn't read as "unexpected error occurred".
+                logger.LogError(ex, "Cannot encrypt the WhatsApp access token for agent {AgentId} — check GoogleCalendar:EncryptionKey", agentId);
+                throw new DomainException(
+                    "The WhatsApp access token could not be stored: this server's encryption key is missing or invalid. "
+                    + "An administrator must configure GoogleCalendar:EncryptionKey (base64, 32 bytes).");
+            }
+        }
 
         // Escalation contacts — plan-gated, only enforce when any are being set
         var settingEscalation = supportWhatsAppNumber != null || salesWhatsAppNumber != null
