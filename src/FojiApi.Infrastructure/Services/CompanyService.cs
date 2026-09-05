@@ -4,6 +4,7 @@ using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace FojiApi.Infrastructure.Services;
@@ -12,6 +13,9 @@ public class CompanyService(
     FojiDbContext db,
     IJwtService jwtService,
     IEmailService emailService,
+    IStorageService storage,
+    IHttpClientFactory httpClientFactory,
+    IConfiguration configuration,
     ILogger<CompanyService> logger) : ICompanyService
 {
     /// <summary>How many companies one user may own via self-serve signup.</summary>
@@ -240,6 +244,13 @@ public class CompanyService(
         if (membership == null || membership.Role != CompanyRole.Owner)
             throw new ForbiddenException("Only the company owner can delete the company.");
 
+        // Agent ids are needed to purge their S3 files, and they cascade away
+        // with the company — so capture them before anything is deleted.
+        var agentIds = await db.Agents
+            .Where(a => a.CompanyId == companyId)
+            .Select(a => a.Id)
+            .ToListAsync();
+
         // Cancel active subscriptions first. (The Stripe webhook re-syncs, but we
         // also cancel in the DB immediately so nothing keeps billing.)
         var activeSubs = await db.Subscriptions
@@ -283,5 +294,68 @@ public class CompanyService(
 
         logger.LogInformation(
             "Company {CompanyId} deleted by user {UserId}", companyId, requestingUserId);
+
+        // The Postgres rows are gone. Now erase the data that lives outside the
+        // database — uploaded documents in S3 and conversation history in
+        // DynamoDB — so "excluir" actually means deleted, per LGPD Art. 18.
+        //
+        // Best effort by design: the deletion is already committed and the
+        // customer's request is honoured. A failure here must not resurrect the
+        // company, so it is logged loudly for cleanup rather than rethrown. The
+        // DynamoDB history also carries a 90-day TTL as a backstop.
+        await PurgeExternalDataAsync(companyId, agentIds);
+    }
+
+    private async Task PurgeExternalDataAsync(int companyId, IReadOnlyCollection<int> agentIds)
+    {
+        // ── S3: agent files (agents/{id}/) and WhatsApp media (tenant/{companyId}/) ──
+        try
+        {
+            var removed = 0;
+            foreach (var agentId in agentIds)
+                removed += await storage.DeleteByPrefixAsync($"agents/{agentId}/");
+            removed += await storage.DeleteByPrefixAsync($"tenant/{companyId}/");
+            logger.LogInformation(
+                "Purged {Count} S3 objects for deleted company {CompanyId}", removed, companyId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Could not purge S3 objects for deleted company {CompanyId} — " +
+                "manual cleanup needed for agents/{{id}}/ and tenant/{CompanyId}/", companyId, companyId);
+        }
+
+        // ── DynamoDB: chat history, owned by foji-ai-api ──
+        var aiApiBase = configuration["AiApi:BaseUrl"]?.TrimEnd('/');
+        var internalKey = configuration["InternalApiKey"];
+        if (string.IsNullOrEmpty(aiApiBase) || string.IsNullOrEmpty(internalKey))
+        {
+            logger.LogError(
+                "Cannot purge chat history for company {CompanyId}: AiApi:BaseUrl or InternalApiKey not configured",
+                companyId);
+            return;
+        }
+
+        try
+        {
+            var http = httpClientFactory.CreateClient();
+            using var req = new HttpRequestMessage(
+                HttpMethod.Post, $"{aiApiBase}/api/v1/internal/chat-history/purge")
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(new { company_id = companyId }),
+            };
+            req.Headers.Add("X-Internal-Key", internalKey);
+            var resp = await http.SendAsync(req);
+            if (!resp.IsSuccessStatusCode)
+                logger.LogError(
+                    "Chat-history purge for company {CompanyId} returned {Status} — history may linger until its 90-day TTL",
+                    companyId, resp.StatusCode);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Could not reach foji-ai-api to purge chat history for company {CompanyId} — " +
+                "it will expire on its 90-day TTL", companyId);
+        }
     }
 }
