@@ -91,6 +91,10 @@ public class AgentService(
             AgentLanguage = parsedLanguage,
             SystemPrompt = systemPrompt,
             UserPrompt = userPrompt?.Trim(),
+            // Warm, conversational tone by default — the human voice is what most
+            // businesses want out of the box. They can switch to Professional or
+            // Concise later.
+            ResponseStyle = "Friendly",
             AgentToken = GenerateHexToken()
         };
 
