@@ -22,8 +22,20 @@ public record InboxConversationItem(
     DateTime? ResolvedAt,
     bool ResolvedAutomatically,
     /// <summary>The customer sent the last message — someone owes them a reply.</summary>
-    bool AwaitingReply
+    bool AwaitingReply,
+    /// <summary>The agent's WhatsApp mode: "Agent", "Inbox" or "Hybrid".</summary>
+    string AgentMode,
+    /// <summary>Hybrid: a person is handling it and the AI is quiet.</summary>
+    bool HumanTakeover,
+    /// <summary>"manual", "reply" or "ai_escalation".</summary>
+    string? TakeoverReason,
+    DateTime? TakeoverAt
 );
+
+/// <summary>What the worker needs to know after recording an inbound message.</summary>
+/// <param name="Duplicate">Already recorded (a webhook retry) — don't answer it again.</param>
+/// <param name="HumanTakeover">A person is handling this conversation — the AI must stay quiet.</param>
+public record InboundRecordResult(int? ConversationId, bool Duplicate, bool HumanTakeover);
 
 public record InboxMessageItem(
     int Id,
@@ -36,7 +48,8 @@ public record InboxMessageItem(
     string? MediaFileName,
     int? SentByUserId,
     string? SenderDisplayName,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    bool IsAiGenerated = false
 );
 
 public record InboxThreadResult(
@@ -50,10 +63,25 @@ public interface IWhatsAppInboxService
     /// Records an inbound message, creating the conversation on first contact.
     /// Idempotent on the wamid — Meta retries and batches webhook deliveries.
     /// </summary>
-    Task RecordInboundAsync(
+    Task<InboundRecordResult> RecordInboundAsync(
         int agentId, string phoneNumberId, string waId, string? profileName, string? wamId,
         string text, string messageType = "text",
         string? mediaS3Key = null, string? mediaContentType = null, string? mediaFileName = null);
+
+    /// <summary>Hybrid: records a reply the AI sent, so the team sees the whole thread.</summary>
+    Task RecordAiReplyAsync(int agentId, string waId, string body);
+
+    /// <summary>
+    /// Hybrid: the AI decided a person is needed. Hands the conversation to the
+    /// team (the AI goes quiet in it) and notifies them.
+    /// </summary>
+    Task EscalateToHumanAsync(int agentId, string waId, string? customerMessage);
+
+    /// <summary>Hybrid: a team member takes the conversation from the AI.</summary>
+    Task<InboxConversationItem?> TakeoverAsync(int companyId, int conversationId, int userId);
+
+    /// <summary>Hybrid: hands the conversation back to the AI.</summary>
+    Task<InboxConversationItem?> ReleaseToAiAsync(int companyId, int conversationId);
 
     /// <param name="status">Filter to Open or Resolved; null returns both.</param>
     Task<IEnumerable<InboxConversationItem>> GetConversationsAsync(

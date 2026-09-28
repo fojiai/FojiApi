@@ -50,6 +50,20 @@ public class WhatsAppConversation : BaseEntity
     /// <summary>True when the idle sweep resolved it rather than a person.</summary>
     public bool ResolvedAutomatically { get; set; }
 
+    /// <summary>
+    /// Hybrid mode: a person is handling this conversation, so the AI stays
+    /// quiet in it. Cleared when it's handed back or resolved.
+    /// </summary>
+    public bool HumanTakeover { get; set; }
+
+    public DateTime? TakeoverAt { get; set; }
+
+    /// <summary>"manual" (took it over), "reply" (answered from the inbox) or
+    /// "ai_escalation" (the AI called the team).</summary>
+    public string? TakeoverReason { get; set; }
+
+    public int? TakeoverByUserId { get; set; }
+
     // Navigation
     public Company Company { get; set; } = null!;
     public Agent Agent { get; set; } = null!;

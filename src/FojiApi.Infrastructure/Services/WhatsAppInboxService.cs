@@ -24,6 +24,7 @@ public class WhatsAppInboxService(
     IStorageService storage,
     IContactService contacts,
     IWhatsAppUsageService usage,
+    IHandoffService handoffs,
     IConfiguration configuration,
     ILogger<WhatsAppInboxService> logger) : IWhatsAppInboxService
 {
@@ -34,17 +35,18 @@ public class WhatsAppInboxService(
 
     // ── Inbound ───────────────────────────────────────────────────────────────
 
-    public async Task RecordInboundAsync(
+    public async Task<InboundRecordResult> RecordInboundAsync(
         int agentId, string phoneNumberId, string waId, string? profileName, string? wamId,
         string text, string messageType = "text",
         string? mediaS3Key = null, string? mediaContentType = null, string? mediaFileName = null)
     {
-        // Meta retries webhooks and can batch up to 1000 updates — never store twice.
+        // Meta retries webhooks and can batch up to 1000 updates — never store
+        // twice, and tell the worker so it doesn't answer twice either.
         if (!string.IsNullOrEmpty(wamId)
             && await db.WhatsAppMessages.AnyAsync(m => m.WamId == wamId))
         {
             logger.LogDebug("Duplicate WhatsApp message {WamId} — skipping", wamId);
-            return;
+            return new InboundRecordResult(null, Duplicate: true, HumanTakeover: false);
         }
 
         var agent = await db.Agents.FirstOrDefaultAsync(a => a.Id == agentId)
@@ -118,7 +120,109 @@ public class WhatsAppInboxService(
             // Lost a race on the wamid or the conversation — the message is already recorded.
             logger.LogDebug("Concurrent insert for WhatsApp message {WamId} — ignoring", wamId);
             db.ChangeTracker.Clear();
+            return new InboundRecordResult(null, Duplicate: true, HumanTakeover: false);
         }
+
+        return new InboundRecordResult(conversation.Id, Duplicate: false, conversation.HumanTakeover);
+    }
+
+    // ── Hybrid mode ──────────────────────────────────────────────────────────
+
+    public async Task RecordAiReplyAsync(int agentId, string waId, string body)
+    {
+        var conversation = await db.WhatsAppConversations
+            .FirstOrDefaultAsync(c => c.AgentId == agentId && c.ContactWaId == waId);
+        if (conversation == null)
+        {
+            // The inbound message creates the conversation, so this means the
+            // two calls raced or the inbound write failed. The reply was still
+            // sent — only the inbox copy is missing.
+            logger.LogWarning("No inbox conversation for agent {AgentId} / {WaId} — AI reply not recorded", agentId, waId);
+            return;
+        }
+
+        db.WhatsAppMessages.Add(new WhatsAppMessage
+        {
+            CompanyId = conversation.CompanyId,
+            ConversationId = conversation.Id,
+            Direction = MessageDirection.Outbound,
+            Body = body.Length > 4096 ? body[..4096] : body,
+            IsAiGenerated = true,
+        });
+
+        conversation.LastMessageAt = DateTime.UtcNow;
+        // The AI has answered, so nothing here is waiting on the team.
+        conversation.UnreadCount = 0;
+        await db.SaveChangesAsync();
+    }
+
+    public async Task EscalateToHumanAsync(int agentId, string waId, string? customerMessage)
+    {
+        var conversation = await db.WhatsAppConversations
+            .FirstOrDefaultAsync(c => c.AgentId == agentId && c.ContactWaId == waId)
+            ?? throw new NotFoundException("Conversation not found.");
+
+        conversation.HumanTakeover = true;
+        conversation.TakeoverReason = "ai_escalation";
+        conversation.TakeoverAt = DateTime.UtcNow;
+        conversation.TakeoverByUserId = null;
+        Reopen(conversation);
+        // Make it light up in the inbox even though the AI already replied.
+        conversation.UnreadCount = Math.Max(1, conversation.UnreadCount);
+        await db.SaveChangesAsync();
+
+        // Same notification path as a widget handoff: email to the agent's
+        // handoff address and a high-priority CRM follow-up.
+        try
+        {
+            await handoffs.CreateHandoffAsync(agentId, $"wa:{waId}", customerMessage, "whatsapp");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Escalated WhatsApp conversation {Id} but the team notification failed", conversation.Id);
+        }
+    }
+
+    public async Task<InboxConversationItem?> TakeoverAsync(int companyId, int conversationId, int userId)
+    {
+        var conversation = await db.WhatsAppConversations
+            .FirstOrDefaultAsync(c => c.CompanyId == companyId && c.Id == conversationId);
+        if (conversation == null) return null;
+
+        TakeOver(conversation, "manual", userId);
+        await db.SaveChangesAsync();
+        return await GetItemAsync(companyId, conversationId);
+    }
+
+    public async Task<InboxConversationItem?> ReleaseToAiAsync(int companyId, int conversationId)
+    {
+        var conversation = await db.WhatsAppConversations
+            .FirstOrDefaultAsync(c => c.CompanyId == companyId && c.Id == conversationId);
+        if (conversation == null) return null;
+
+        if (ReleaseTakeover(conversation)) await db.SaveChangesAsync();
+        return await GetItemAsync(companyId, conversationId);
+    }
+
+    private static void TakeOver(WhatsAppConversation conversation, string reason, int userId)
+    {
+        conversation.HumanTakeover = true;
+        conversation.TakeoverReason = reason;
+        conversation.TakeoverAt = DateTime.UtcNow;
+        conversation.TakeoverByUserId = userId;
+        // Whoever takes it owns it, unless someone already claimed it.
+        conversation.AssignedUserId ??= userId;
+    }
+
+    /// <summary>Returns true when a person had it and now the AI does.</summary>
+    private static bool ReleaseTakeover(WhatsAppConversation conversation)
+    {
+        if (!conversation.HumanTakeover) return false;
+        conversation.HumanTakeover = false;
+        conversation.TakeoverReason = null;
+        conversation.TakeoverAt = null;
+        conversation.TakeoverByUserId = null;
+        return true;
     }
 
     // ── Reads ─────────────────────────────────────────────────────────────────
@@ -148,7 +252,12 @@ public class WhatsAppInboxService(
             // An inbound message sets both timestamps to the same instant; a reply
             // moves LastMessageAt past it. So equal-or-later means the customer
             // spoke last.
-            c.LastInboundAt != null && c.LastInboundAt >= c.LastMessageAt);
+            c.LastInboundAt != null && c.LastInboundAt >= c.LastMessageAt,
+            c.Agent.WhatsAppMode == WhatsAppMode.Hybrid ? "Hybrid"
+                : c.Agent.WhatsAppMode == WhatsAppMode.Inbox ? "Inbox" : "Agent",
+            c.HumanTakeover,
+            c.TakeoverReason,
+            c.TakeoverAt);
 
     public async Task<IEnumerable<InboxConversationItem>> GetConversationsAsync(
         int companyId, int? agentId = null, InboxConversationStatus? status = null)
@@ -179,15 +288,18 @@ public class WhatsAppInboxService(
 
         var rows = await db.WhatsAppMessages
             .Where(m => m.ConversationId == conversationId && m.CompanyId == companyId)
-            .OrderBy(m => m.CreatedAt)
+            // The newest 500, not the first 500 — on a long thread the latest
+            // messages are the ones that matter.
+            .OrderByDescending(m => m.CreatedAt)
             .Take(500)
             .Select(m => new
             {
                 m.Id, m.Direction, m.Body, m.MessageType,
                 m.MediaS3Key, m.MediaContentType, m.MediaFileName,
-                m.SentByUserId, m.SenderDisplayName, m.CreatedAt
+                m.SentByUserId, m.SenderDisplayName, m.CreatedAt, m.IsAiGenerated
             })
             .ToListAsync();
+        rows.Reverse(); // oldest first for display
 
         // Media is served through short-lived presigned URLs; the bucket stays private.
         var messages = new List<InboxMessageItem>(rows.Count);
@@ -209,7 +321,7 @@ public class WhatsAppInboxService(
             messages.Add(new InboxMessageItem(
                 m.Id, m.Direction.ToString(), m.Body, m.MessageType,
                 url, m.MediaContentType, m.MediaFileName,
-                m.SentByUserId, m.SenderDisplayName, m.CreatedAt));
+                m.SentByUserId, m.SenderDisplayName, m.CreatedAt, m.IsAiGenerated));
         }
 
         return new InboxThreadResult(conversation, messages);
@@ -305,6 +417,8 @@ public class WhatsAppInboxService(
             conversation.ResolvedAt = DateTime.UtcNow;
             conversation.ResolvedAutomatically = false;
             conversation.UnreadCount = 0; // resolving means it's been dealt with
+            // Done means done: the next conversation starts with the AI again.
+            ReleaseTakeover(conversation);
             await db.SaveChangesAsync();
         }
 
@@ -347,6 +461,11 @@ public class WhatsAppInboxService(
                 .SetProperty(c => c.Status, InboxConversationStatus.Resolved)
                 .SetProperty(c => c.ResolvedAt, now)
                 .SetProperty(c => c.ResolvedAutomatically, true)
+                // A resolved conversation goes back to the AI (hybrid mode).
+                .SetProperty(c => c.HumanTakeover, false)
+                .SetProperty(c => c.TakeoverReason, (string?)null)
+                .SetProperty(c => c.TakeoverAt, (DateTime?)null)
+                .SetProperty(c => c.TakeoverByUserId, (int?)null)
                 .SetProperty(c => c.UpdatedAt, now), ct);
     }
 
@@ -401,6 +520,10 @@ public class WhatsAppInboxService(
         conversation.LastMessageAt = DateTime.UtcNow;
         conversation.UnreadCount = 0; // replying implies you've read it
         Reopen(conversation); // replying to a resolved thread makes it live again
+        // Hybrid: a person answering means a person is handling it now — the AI
+        // must not talk over them.
+        if (conversation.Agent.WhatsAppMode == WhatsAppMode.Hybrid && !conversation.HumanTakeover)
+            TakeOver(conversation, "reply", userId);
         await db.SaveChangesAsync();
 
         return new InboxMessageItem(

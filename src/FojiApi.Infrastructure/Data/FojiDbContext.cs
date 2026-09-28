@@ -385,6 +385,7 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.HasIndex(c => c.ContactId);
             e.Property(c => c.Status).HasConversion<string>().HasMaxLength(20)
                 .HasDefaultValue(InboxConversationStatus.Open);
+            e.Property(c => c.TakeoverReason).HasMaxLength(20);
             e.Property(c => c.PhoneNumberId).HasMaxLength(64).IsRequired();
             e.Property(c => c.ContactWaId).HasMaxLength(30).IsRequired();
             e.Property(c => c.ContactName).HasMaxLength(200);

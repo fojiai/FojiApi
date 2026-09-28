@@ -31,6 +31,9 @@ public class WhatsAppMessage : BaseEntity
     /// <summary>Team member who sent an outbound message; null for inbound and AI replies.</summary>
     public int? SentByUserId { get; set; }
 
+    /// <summary>An outbound message written by the AI (hybrid mode).</summary>
+    public bool IsAiGenerated { get; set; }
+
     /// <summary>
     /// The display name stamped on the message at send time. Snapshotted rather
     /// than joined, so renaming a member never rewrites history.

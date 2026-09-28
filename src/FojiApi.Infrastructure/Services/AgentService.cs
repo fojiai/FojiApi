@@ -142,7 +142,7 @@ public class AgentService(
         if (whatsAppMode != null)
         {
             if (!Enum.TryParse<WhatsAppMode>(whatsAppMode, true, out var mode))
-                throw new DomainException($"Invalid WhatsApp mode: {whatsAppMode}. Valid values: Agent, Inbox.");
+                throw new DomainException($"Invalid WhatsApp mode: {whatsAppMode}. Valid values: Agent, Inbox, Hybrid.");
             agent.WhatsAppMode = mode;
         }
 

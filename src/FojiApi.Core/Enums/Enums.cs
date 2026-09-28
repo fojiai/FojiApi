@@ -106,7 +106,14 @@ public enum WhatsAppMode
     Agent,
 
     /// <summary>Messages land in the shared team inbox and the AI stays silent.</summary>
-    Inbox
+    Inbox,
+
+    /// <summary>
+    /// The AI answers and every conversation also lands in the inbox, where a
+    /// person can take it over — the AI goes quiet in that conversation until
+    /// it's handed back or resolved. The AI calls the team itself when needed.
+    /// </summary>
+    Hybrid
 }
 
 public enum MessageDirection
