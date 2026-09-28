@@ -62,7 +62,8 @@ public class AgentService(
             agent.WhatsAppMode.ToString(),
             agent.WhatsAppNeedsReconnect,
             agent.WhatsAppTokenExpiresAt,
-            agent.WhatsAppBillingIssue
+            agent.WhatsAppBillingIssue,
+            agent.WhatsAppSplitReplies
         );
     }
 
@@ -112,7 +113,7 @@ public class AgentService(
         string? widgetPrimaryColor, string? widgetTitle, string? widgetPlaceholder, string? widgetPosition,
         string? responseStyle, bool? leadCaptureEnabled, string? leadCapturePrompt,
         bool? handoffEnabled, string? handoffNotifyEmail, string? handoffNotifyWhatsApp, string? handoffMessage,
-        string? whatsAppAccessToken = null, string? whatsAppMode = null)
+        string? whatsAppAccessToken = null, string? whatsAppMode = null, bool? whatsAppSplitReplies = null)
     {
         var agent = await db.Agents.FindAsync(agentId)
             ?? throw new NotFoundException("Agent not found.");
@@ -144,6 +145,8 @@ public class AgentService(
                 throw new DomainException($"Invalid WhatsApp mode: {whatsAppMode}. Valid values: Agent, Inbox.");
             agent.WhatsAppMode = mode;
         }
+
+        if (whatsAppSplitReplies.HasValue) agent.WhatsAppSplitReplies = whatsAppSplitReplies.Value;
 
         // WhatsApp access token — encrypt at rest; empty string clears it. Never returned to clients.
         if (whatsAppAccessToken != null)

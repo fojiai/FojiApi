@@ -42,6 +42,13 @@ public class Agent : BaseEntity
     /// <summary>Agent = the AI replies automatically; Inbox = humans reply from the shared inbox.</summary>
     public WhatsAppMode WhatsAppMode { get; set; } = WhatsAppMode.Agent;
 
+    /// <summary>
+    /// Send longer AI replies as two WhatsApp messages instead of one block, the
+    /// way a person texts. Off by default: each message is billed by Meta and
+    /// counts against the plan's allowance, so it's the business's call.
+    /// </summary>
+    public bool WhatsAppSplitReplies { get; set; }
+
     // Escalation contacts (shown in system prompt when set; plan-gated)
     public string? SupportWhatsAppNumber { get; set; }
     public string? SalesWhatsAppNumber { get; set; }
