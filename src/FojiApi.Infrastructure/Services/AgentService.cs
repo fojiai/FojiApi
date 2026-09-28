@@ -105,6 +105,35 @@ public class AgentService(
         return new AgentCreatedResult(agent.Id, agent.Name, agent.AgentToken);
     }
 
+    /// <summary>
+    /// The dashboard sends the system prompt on every save, so "unchanged" is the
+    /// normal case. An edited prompt is saved as written. An unedited prompt that
+    /// is still exactly the template for the old industry/language follows a
+    /// change of either to the new template — otherwise switching an agent from
+    /// Law to General would leave it with the law disclaimer. A prompt someone
+    /// customised is never overwritten by a template.
+    /// </summary>
+    private async Task ApplySystemPromptAsync(
+        Agent agent, string? submittedPrompt, IndustryType oldIndustry, AgentLanguage oldLanguage)
+    {
+        var submitted = submittedPrompt?.Trim();
+        if (!string.IsNullOrEmpty(submitted) && submitted != agent.SystemPrompt)
+        {
+            if (submitted.Length < 10)
+                throw new DomainException("The system prompt must be at least 10 characters.");
+            agent.SystemPrompt = submitted;
+            return;
+        }
+
+        if (agent.IndustryType == oldIndustry && agent.AgentLanguage == oldLanguage) return;
+
+        var companyName = await db.Companies
+            .Where(c => c.Id == agent.CompanyId).Select(c => c.Name).FirstAsync();
+        var oldTemplate = industryPromptService.GetSystemPrompt(oldIndustry, companyName, oldLanguage);
+        if (agent.SystemPrompt == oldTemplate)
+            agent.SystemPrompt = industryPromptService.GetSystemPrompt(agent.IndustryType, companyName, agent.AgentLanguage);
+    }
+
     public async Task<AgentUpdatedResult> UpdateAgentAsync(
         int agentId, string? name, string? description, string? userPrompt,
         bool? isActive, string? agentLanguage, bool? whatsAppEnabled, string? whatsAppPhoneNumberId,
@@ -113,7 +142,8 @@ public class AgentService(
         string? widgetPrimaryColor, string? widgetTitle, string? widgetPlaceholder, string? widgetPosition,
         string? responseStyle, bool? leadCaptureEnabled, string? leadCapturePrompt,
         bool? handoffEnabled, string? handoffNotifyEmail, string? handoffNotifyWhatsApp, string? handoffMessage,
-        string? whatsAppAccessToken = null, string? whatsAppMode = null, bool? whatsAppSplitReplies = null)
+        string? whatsAppAccessToken = null, string? whatsAppMode = null, bool? whatsAppSplitReplies = null,
+        string? systemPrompt = null, string? industryType = null)
     {
         var agent = await db.Agents.FindAsync(agentId)
             ?? throw new NotFoundException("Agent not found.");
@@ -123,12 +153,26 @@ public class AgentService(
         if (userPrompt != null) agent.UserPrompt = userPrompt.Trim();
         if (isActive.HasValue) agent.IsActive = isActive.Value;
 
+        // Snapshot before industry/language change, to tell whether the stored
+        // prompt is still the untouched template for the old combination.
+        var oldIndustry = agent.IndustryType;
+        var oldLanguage = agent.AgentLanguage;
+
         if (agentLanguage != null)
         {
             if (!Enum.TryParse<AgentLanguage>(agentLanguage.Replace("-", ""), true, out var lang))
                 throw new DomainException($"Invalid agent language: {agentLanguage}. Valid values: pt-br, en, es.");
             agent.AgentLanguage = lang;
         }
+
+        if (industryType != null)
+        {
+            if (!Enum.TryParse<IndustryType>(industryType.Replace("_", ""), true, out var industry))
+                throw new DomainException($"Invalid industry type: {industryType}.");
+            agent.IndustryType = industry;
+        }
+
+        await ApplySystemPromptAsync(agent, systemPrompt, oldIndustry, oldLanguage);
 
         if (whatsAppEnabled.HasValue)
         {

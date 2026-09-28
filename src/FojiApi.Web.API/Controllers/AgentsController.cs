@@ -35,7 +35,7 @@ public class AgentsController(IAgentService agentService, ICurrentUserService cu
     {
         var existing = await agentService.GetAgentAsync(id);
         EnsureCompanyAccess(existing.CompanyId, CompanyRole.Admin);
-        return Ok(await agentService.UpdateAgentAsync(id, req.Name, req.Description, req.UserPrompt, req.IsActive, req.AgentLanguage, req.WhatsAppEnabled, req.WhatsAppPhoneNumberId, req.SupportWhatsAppNumber, req.SalesWhatsAppNumber, req.SupportEmail, req.SalesEmail, req.WelcomeMessage, req.ConversationStarters, req.WidgetPrimaryColor, req.WidgetTitle, req.WidgetPlaceholder, req.WidgetPosition, req.ResponseStyle, req.LeadCaptureEnabled, req.LeadCapturePrompt, req.HandoffEnabled, req.HandoffNotifyEmail, req.HandoffNotifyWhatsApp, req.HandoffMessage, req.WhatsAppAccessToken, req.WhatsAppMode, req.WhatsAppSplitReplies));
+        return Ok(await agentService.UpdateAgentAsync(id, req.Name, req.Description, req.UserPrompt, req.IsActive, req.AgentLanguage, req.WhatsAppEnabled, req.WhatsAppPhoneNumberId, req.SupportWhatsAppNumber, req.SalesWhatsAppNumber, req.SupportEmail, req.SalesEmail, req.WelcomeMessage, req.ConversationStarters, req.WidgetPrimaryColor, req.WidgetTitle, req.WidgetPlaceholder, req.WidgetPosition, req.ResponseStyle, req.LeadCaptureEnabled, req.LeadCapturePrompt, req.HandoffEnabled, req.HandoffNotifyEmail, req.HandoffNotifyWhatsApp, req.HandoffMessage, req.WhatsAppAccessToken, req.WhatsAppMode, req.WhatsAppSplitReplies, req.SystemPrompt, req.IndustryType));
     }
 
     [HttpDelete("{id:int}")]
@@ -169,5 +169,12 @@ public record UpdateAgentRequest(
     [param: System.ComponentModel.DataAnnotations.StringLength(20)]
     string? WhatsAppMode,
 
-    bool? WhatsAppSplitReplies = null
+    bool? WhatsAppSplitReplies = null,
+
+    // The dashboard sends both on every save; they used to be silently dropped.
+    [param: System.ComponentModel.DataAnnotations.StringLength(10000)]
+    string? SystemPrompt = null,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(30)]
+    string? IndustryType = null
 );
