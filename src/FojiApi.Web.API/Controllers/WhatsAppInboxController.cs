@@ -15,11 +15,22 @@ public class WhatsAppInboxController(
     IConfiguration configuration,
     ICurrentUserService currentUser) : BaseController(currentUser)
 {
+    /// <param name="status">"open" or "resolved"; omit for both.</param>
     [HttpGet("conversations")]
-    public async Task<IActionResult> GetConversations([FromQuery] int companyId, [FromQuery] int? agentId = null)
+    public async Task<IActionResult> GetConversations(
+        [FromQuery] int companyId, [FromQuery] int? agentId = null, [FromQuery] string? status = null)
     {
         EnsureCompanyAccess(companyId);
-        return Ok(await inbox.GetConversationsAsync(companyId, agentId));
+
+        InboxConversationStatus? filter = null;
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse<InboxConversationStatus>(status, ignoreCase: true, out var parsed))
+                throw new DomainException("Invalid status. Use 'open' or 'resolved'.");
+            filter = parsed;
+        }
+
+        return Ok(await inbox.GetConversationsAsync(companyId, agentId, filter));
     }
 
     [HttpGet("conversations/{id:int}")]
@@ -50,6 +61,22 @@ public class WhatsAppInboxController(
     {
         EnsureCompanyAccess(req.CompanyId);
         var updated = await inbox.AssignAsync(req.CompanyId, id, req.UserId);
+        return updated == null ? NotFound() : Ok(updated);
+    }
+
+    [HttpPost("conversations/{id:int}/resolve")]
+    public async Task<IActionResult> Resolve([FromRoute] int id, [FromBody] MarkReadRequest req)
+    {
+        EnsureCompanyAccess(req.CompanyId);
+        var updated = await inbox.ResolveAsync(req.CompanyId, id);
+        return updated == null ? NotFound() : Ok(updated);
+    }
+
+    [HttpPost("conversations/{id:int}/reopen")]
+    public async Task<IActionResult> Reopen([FromRoute] int id, [FromBody] MarkReadRequest req)
+    {
+        EnsureCompanyAccess(req.CompanyId);
+        var updated = await inbox.ReopenAsync(req.CompanyId, id);
         return updated == null ? NotFound() : Ok(updated);
     }
 

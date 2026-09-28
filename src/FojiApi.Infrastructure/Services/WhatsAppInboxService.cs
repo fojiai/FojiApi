@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FojiApi.Core.Entities;
@@ -88,6 +89,9 @@ public class WhatsAppInboxService(
             conversation.PhoneNumberId = phoneNumberId;
             conversation.LastMessageAt = now;
             conversation.LastInboundAt = now;
+
+            // The customer wrote again — whatever "done" meant before, it isn't now.
+            Reopen(conversation);
         }
 
         conversation.UnreadCount++;
@@ -119,44 +123,57 @@ public class WhatsAppInboxService(
 
     // ── Reads ─────────────────────────────────────────────────────────────────
 
-    public async Task<IEnumerable<InboxConversationItem>> GetConversationsAsync(int companyId, int? agentId = null)
+    /// <summary>
+    /// One projection for every place that returns a conversation, so the list,
+    /// the thread header and the resolve/assign responses can't drift apart.
+    /// </summary>
+    private static Expression<Func<WhatsAppConversation, InboxConversationItem>> ToItem(DateTime windowCutoff) =>
+        c => new InboxConversationItem(
+            c.Id,
+            c.AgentId,
+            c.Agent.Name,
+            c.ContactWaId,
+            c.ContactName,
+            c.ContactId,
+            c.AssignedUserId,
+            c.AssignedUser != null ? (c.AssignedUser.FirstName + " " + c.AssignedUser.LastName).Trim() : null,
+            c.Messages.OrderByDescending(m => m.CreatedAt).Select(m => m.Body).FirstOrDefault(),
+            c.LastMessageAt,
+            c.LastInboundAt,
+            c.UnreadCount,
+            c.LastInboundAt != null && c.LastInboundAt > windowCutoff,
+            c.Status == InboxConversationStatus.Resolved ? "Resolved" : "Open",
+            c.ResolvedAt,
+            c.ResolvedAutomatically,
+            // An inbound message sets both timestamps to the same instant; a reply
+            // moves LastMessageAt past it. So equal-or-later means the customer
+            // spoke last.
+            c.LastInboundAt != null && c.LastInboundAt >= c.LastMessageAt);
+
+    public async Task<IEnumerable<InboxConversationItem>> GetConversationsAsync(
+        int companyId, int? agentId = null, InboxConversationStatus? status = null)
     {
         var cutoff = DateTime.UtcNow - ServiceWindow;
 
         return await db.WhatsAppConversations
-            .Where(c => c.CompanyId == companyId && (agentId == null || c.AgentId == agentId))
+            .Where(c => c.CompanyId == companyId
+                        && (agentId == null || c.AgentId == agentId)
+                        && (status == null || c.Status == status))
             .OrderByDescending(c => c.LastMessageAt)
             .Take(200)
-            .Select(c => new InboxConversationItem(
-                c.Id,
-                c.AgentId,
-                c.Agent.Name,
-                c.ContactWaId,
-                c.ContactName,
-                c.ContactId,
-                c.AssignedUserId,
-                c.AssignedUser != null ? (c.AssignedUser.FirstName + " " + c.AssignedUser.LastName).Trim() : null,
-                c.Messages.OrderByDescending(m => m.CreatedAt).Select(m => m.Body).FirstOrDefault(),
-                c.LastMessageAt,
-                c.LastInboundAt,
-                c.UnreadCount,
-                c.LastInboundAt != null && c.LastInboundAt > cutoff))
+            .Select(ToItem(cutoff))
             .ToListAsync();
     }
 
+    private async Task<InboxConversationItem?> GetItemAsync(int companyId, int conversationId) =>
+        await db.WhatsAppConversations
+            .Where(c => c.CompanyId == companyId && c.Id == conversationId)
+            .Select(ToItem(DateTime.UtcNow - ServiceWindow))
+            .FirstOrDefaultAsync();
+
     public async Task<InboxThreadResult?> GetThreadAsync(int companyId, int conversationId)
     {
-        var cutoff = DateTime.UtcNow - ServiceWindow;
-
-        var conversation = await db.WhatsAppConversations
-            .Where(c => c.CompanyId == companyId && c.Id == conversationId)
-            .Select(c => new InboxConversationItem(
-                c.Id, c.AgentId, c.Agent.Name, c.ContactWaId, c.ContactName, c.ContactId,
-                c.AssignedUserId,
-                c.AssignedUser != null ? (c.AssignedUser.FirstName + " " + c.AssignedUser.LastName).Trim() : null,
-                null, c.LastMessageAt, c.LastInboundAt, c.UnreadCount,
-                c.LastInboundAt != null && c.LastInboundAt > cutoff))
-            .FirstOrDefaultAsync();
+        var conversation = await GetItemAsync(companyId, conversationId);
 
         if (conversation == null) return null;
 
@@ -224,8 +241,66 @@ public class WhatsAppInboxService(
         conversation.AssignedUserId = userId;
         await db.SaveChangesAsync();
 
-        var items = await GetConversationsAsync(companyId);
-        return items.FirstOrDefault(x => x.Id == conversationId);
+        return await GetItemAsync(companyId, conversationId);
+    }
+
+    // ── Status ────────────────────────────────────────────────────────────────
+
+    public async Task<InboxConversationItem?> ResolveAsync(int companyId, int conversationId)
+    {
+        var conversation = await db.WhatsAppConversations
+            .FirstOrDefaultAsync(c => c.CompanyId == companyId && c.Id == conversationId);
+        if (conversation == null) return null;
+
+        if (conversation.Status != InboxConversationStatus.Resolved)
+        {
+            conversation.Status = InboxConversationStatus.Resolved;
+            conversation.ResolvedAt = DateTime.UtcNow;
+            conversation.ResolvedAutomatically = false;
+            conversation.UnreadCount = 0; // resolving means it's been dealt with
+            await db.SaveChangesAsync();
+        }
+
+        return await GetItemAsync(companyId, conversationId);
+    }
+
+    public async Task<InboxConversationItem?> ReopenAsync(int companyId, int conversationId)
+    {
+        var conversation = await db.WhatsAppConversations
+            .FirstOrDefaultAsync(c => c.CompanyId == companyId && c.Id == conversationId);
+        if (conversation == null) return null;
+
+        if (Reopen(conversation)) await db.SaveChangesAsync();
+        return await GetItemAsync(companyId, conversationId);
+    }
+
+    /// <summary>Returns true when the conversation was resolved and is now open.</summary>
+    private static bool Reopen(WhatsAppConversation conversation)
+    {
+        if (conversation.Status == InboxConversationStatus.Open) return false;
+        conversation.Status = InboxConversationStatus.Open;
+        conversation.ResolvedAt = null;
+        conversation.ResolvedAutomatically = false;
+        return true;
+    }
+
+    public async Task<int> AutoResolveIdleAsync(TimeSpan idleFor, CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        var idleSince = now - idleFor;
+
+        // Only conversations where the team had the last word. "Customer spoke
+        // last" (LastInboundAt >= LastMessageAt) is someone waiting on a reply —
+        // resolving that would hide exactly what the inbox exists to surface.
+        return await db.WhatsAppConversations
+            .Where(c => c.Status == InboxConversationStatus.Open
+                        && c.LastMessageAt < idleSince
+                        && (c.LastInboundAt == null || c.LastMessageAt > c.LastInboundAt))
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Status, InboxConversationStatus.Resolved)
+                .SetProperty(c => c.ResolvedAt, now)
+                .SetProperty(c => c.ResolvedAutomatically, true)
+                .SetProperty(c => c.UpdatedAt, now), ct);
     }
 
     // ── Outbound ──────────────────────────────────────────────────────────────
@@ -278,6 +353,7 @@ public class WhatsAppInboxService(
 
         conversation.LastMessageAt = DateTime.UtcNow;
         conversation.UnreadCount = 0; // replying implies you've read it
+        Reopen(conversation); // replying to a resolved thread makes it live again
         await db.SaveChangesAsync();
 
         return new InboxMessageItem(

@@ -1,3 +1,5 @@
+using FojiApi.Core.Enums;
+
 namespace FojiApi.Core.Entities;
 
 /// <summary>
@@ -36,6 +38,17 @@ public class WhatsAppConversation : BaseEntity
 
     /// <summary>Team member who claimed this conversation, so two people don't answer at once.</summary>
     public int? AssignedUserId { get; set; }
+
+    /// <summary>
+    /// Open until the team is done with it. Resolved conversations drop out of the
+    /// default inbox view; the customer writing again reopens them.
+    /// </summary>
+    public InboxConversationStatus Status { get; set; } = InboxConversationStatus.Open;
+
+    public DateTime? ResolvedAt { get; set; }
+
+    /// <summary>True when the idle sweep resolved it rather than a person.</summary>
+    public bool ResolvedAutomatically { get; set; }
 
     // Navigation
     public Company Company { get; set; } = null!;

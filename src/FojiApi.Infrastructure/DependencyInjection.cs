@@ -72,6 +72,7 @@ public static class DependencyInjection
         // Keeps 60-day Embedded Signup tokens alive without the customer ever
         // knowing they expire.
         services.AddHostedService<BackgroundJobs.WhatsAppTokenRefreshJob>();
+        services.AddHostedService<BackgroundJobs.WhatsAppInboxAutoResolveJob>();
         services.AddScoped<ITrialExpiryService, TrialExpiryService>();
         services.AddScoped<ILeadService, LeadService>();
         services.AddScoped<IHandoffService, HandoffService>();

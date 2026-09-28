@@ -1,3 +1,5 @@
+using FojiApi.Core.Enums;
+
 namespace FojiApi.Core.Interfaces.Services;
 
 public record InboxConversationItem(
@@ -14,7 +16,13 @@ public record InboxConversationItem(
     DateTime? LastInboundAt,
     int UnreadCount,
     /// <summary>False once Meta's 24-hour customer service window has closed.</summary>
-    bool CanReplyFreeform
+    bool CanReplyFreeform,
+    /// <summary>"Open" or "Resolved".</summary>
+    string Status,
+    DateTime? ResolvedAt,
+    bool ResolvedAutomatically,
+    /// <summary>The customer sent the last message — someone owes them a reply.</summary>
+    bool AwaitingReply
 );
 
 public record InboxMessageItem(
@@ -47,7 +55,9 @@ public interface IWhatsAppInboxService
         string text, string messageType = "text",
         string? mediaS3Key = null, string? mediaContentType = null, string? mediaFileName = null);
 
-    Task<IEnumerable<InboxConversationItem>> GetConversationsAsync(int companyId, int? agentId = null);
+    /// <param name="status">Filter to Open or Resolved; null returns both.</param>
+    Task<IEnumerable<InboxConversationItem>> GetConversationsAsync(
+        int companyId, int? agentId = null, InboxConversationStatus? status = null);
 
     Task<InboxThreadResult?> GetThreadAsync(int companyId, int conversationId);
 
@@ -61,4 +71,17 @@ public interface IWhatsAppInboxService
 
     /// <summary>Claims or releases a conversation. Pass null to unassign.</summary>
     Task<InboxConversationItem?> AssignAsync(int companyId, int conversationId, int? userId);
+
+    /// <summary>Marks a conversation done. The customer writing again reopens it.</summary>
+    Task<InboxConversationItem?> ResolveAsync(int companyId, int conversationId);
+
+    Task<InboxConversationItem?> ReopenAsync(int companyId, int conversationId);
+
+    /// <summary>
+    /// Resolves open conversations idle for longer than <paramref name="idleFor"/>
+    /// in which the team had the last word. A conversation where the customer sent
+    /// the last message is never auto-resolved — that's someone waiting on a reply.
+    /// Returns how many were resolved.
+    /// </summary>
+    Task<int> AutoResolveIdleAsync(TimeSpan idleFor, CancellationToken ct = default);
 }

@@ -114,3 +114,13 @@ public enum MessageDirection
     Inbound,
     Outbound
 }
+
+/// <summary>
+/// Whether a shared-inbox conversation still needs the team. A new inbound
+/// message always reopens it.
+/// </summary>
+public enum InboxConversationStatus
+{
+    Open,
+    Resolved
+}
