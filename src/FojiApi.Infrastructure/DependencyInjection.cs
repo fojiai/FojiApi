@@ -73,6 +73,7 @@ public static class DependencyInjection
         // knowing they expire.
         services.AddHostedService<BackgroundJobs.WhatsAppTokenRefreshJob>();
         services.AddHostedService<BackgroundJobs.WhatsAppInboxAutoResolveJob>();
+        services.AddHostedService<BackgroundJobs.WhatsAppEscalationSweepJob>();
         services.AddScoped<ITrialExpiryService, TrialExpiryService>();
         services.AddScoped<ILeadService, LeadService>();
         services.AddScoped<IHandoffService, HandoffService>();

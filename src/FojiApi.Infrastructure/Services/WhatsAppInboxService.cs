@@ -123,7 +123,9 @@ public class WhatsAppInboxService(
             return new InboundRecordResult(null, Duplicate: true, HumanTakeover: false);
         }
 
-        return new InboundRecordResult(conversation.Id, Duplicate: false, conversation.HumanTakeover);
+        return new InboundRecordResult(
+            conversation.Id, Duplicate: false, conversation.HumanTakeover,
+            AwaitingHuman: conversation.AwaitingHumanSince != null);
     }
 
     // ── Hybrid mode ──────────────────────────────────────────────────────────
@@ -162,10 +164,21 @@ public class WhatsAppInboxService(
             .FirstOrDefaultAsync(c => c.AgentId == agentId && c.ContactWaId == waId)
             ?? throw new NotFoundException("Conversation not found.");
 
+        // The team was already called for this customer and hasn't answered yet.
+        // Calling again would restart the wait and send another "we'll get back
+        // to you" — the request is already standing, so leave it.
+        if (conversation.AwaitingHumanSince != null)
+        {
+            logger.LogInformation("Conversation {Id} already awaiting a person — not escalating again", conversation.Id);
+            return;
+        }
+
+        var now = DateTime.UtcNow;
         conversation.HumanTakeover = true;
         conversation.TakeoverReason = "ai_escalation";
-        conversation.TakeoverAt = DateTime.UtcNow;
+        conversation.TakeoverAt = now;
         conversation.TakeoverByUserId = null;
+        conversation.AwaitingHumanSince = now;
         Reopen(conversation);
         // Make it light up in the inbox even though the AI already replied.
         conversation.UnreadCount = Math.Max(1, conversation.UnreadCount);
@@ -210,19 +223,106 @@ public class WhatsAppInboxService(
         conversation.TakeoverReason = reason;
         conversation.TakeoverAt = DateTime.UtcNow;
         conversation.TakeoverByUserId = userId;
+        // A person has it now, so the customer's request for one is answered.
+        conversation.AwaitingHumanSince = null;
         // Whoever takes it owns it, unless someone already claimed it.
         conversation.AssignedUserId ??= userId;
     }
 
-    /// <summary>Returns true when a person had it and now the AI does.</summary>
+    /// <summary>Returns true when anything changed. Handing back — or resolving —
+    /// also clears a standing request for a person: someone decided it.</summary>
     private static bool ReleaseTakeover(WhatsAppConversation conversation)
     {
-        if (!conversation.HumanTakeover) return false;
+        if (!conversation.HumanTakeover && conversation.AwaitingHumanSince == null) return false;
         conversation.HumanTakeover = false;
         conversation.TakeoverReason = null;
         conversation.TakeoverAt = null;
         conversation.TakeoverByUserId = null;
+        conversation.AwaitingHumanSince = null;
         return true;
+    }
+
+    /// <summary>What the customer is told when nobody picked up in time.</summary>
+    private static readonly Dictionary<AgentLanguage, string> HoldingMessages = new()
+    {
+        [AgentLanguage.PtBr] = "Nossa equipe ainda não conseguiu te responder — já deixei seu recado com eles e alguém vai falar com você por aqui assim que possível. Enquanto isso, se quiser, posso continuar te ajudando 🙂",
+        [AgentLanguage.Es] = "Nuestro equipo todavía no pudo responderte — ya les dejé tu mensaje y alguien te va a escribir por aquí lo antes posible. Mientras tanto, si quieres, puedo seguir ayudándote 🙂",
+        [AgentLanguage.En] = "Our team hasn't been able to get to you yet — I've passed your message on and someone will reply right here as soon as they can. In the meantime, I'm happy to keep helping 🙂",
+    };
+
+    public async Task<int> HandleUnansweredEscalationsAsync(TimeSpan timeout, CancellationToken ct = default)
+    {
+        var now = DateTime.UtcNow;
+        var cutoff = now - timeout;
+
+        var candidates = await db.WhatsAppConversations
+            .Where(c => c.HumanTakeover
+                        && c.TakeoverReason == "ai_escalation"
+                        && c.TakeoverAt < cutoff
+                        && c.Status == InboxConversationStatus.Open)
+            .Select(c => c.Id)
+            .Take(50)
+            .ToListAsync(ct);
+
+        var handled = 0;
+        foreach (var id in candidates)
+        {
+            // Claim it atomically: with several API instances running this sweep,
+            // only the one whose UPDATE hits the row sends the message. The AI
+            // takes the conversation back; AwaitingHumanSince stays set.
+            var claimed = await db.WhatsAppConversations
+                .Where(c => c.Id == id && c.HumanTakeover && c.TakeoverReason == "ai_escalation")
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(c => c.HumanTakeover, false)
+                    .SetProperty(c => c.TakeoverReason, (string?)null)
+                    .SetProperty(c => c.TakeoverAt, (DateTime?)null)
+                    .SetProperty(c => c.TakeoverByUserId, (int?)null)
+                    .SetProperty(c => c.UpdatedAt, now), ct);
+            if (claimed == 0) continue;
+            handled++;
+
+            try
+            {
+                await SendHoldingMessageAsync(id, ct);
+            }
+            catch (Exception ex)
+            {
+                // The AI is answering again either way; only the heads-up failed.
+                logger.LogWarning(ex, "Could not send the escalation holding message for conversation {Id}", id);
+            }
+        }
+        return handled;
+    }
+
+    private async Task SendHoldingMessageAsync(int conversationId, CancellationToken ct)
+    {
+        var conversation = await db.WhatsAppConversations
+            .Include(c => c.Agent)
+            .FirstOrDefaultAsync(c => c.Id == conversationId, ct);
+        if (conversation == null) return;
+
+        // Outside Meta's 24h window a free-form message would be rejected.
+        if (conversation.LastInboundAt == null || conversation.LastInboundAt < DateTime.UtcNow - ServiceWindow)
+            return;
+
+        // Same allowance as every message we send.
+        var consumed = await usage.TryConsumeAsync(conversation.CompanyId, WhatsAppMessageCategory.Service, ct);
+        if (!consumed.Allowed) return;
+
+        var body = HoldingMessages.GetValueOrDefault(conversation.Agent.AgentLanguage, HoldingMessages[AgentLanguage.PtBr]);
+        var wamId = await SendViaMetaAsync(conversation, body);
+
+        db.WhatsAppMessages.Add(new WhatsAppMessage
+        {
+            CompanyId = conversation.CompanyId,
+            ConversationId = conversation.Id,
+            Direction = MessageDirection.Outbound,
+            Body = body,
+            WamId = wamId,
+            IsAiGenerated = true,
+        });
+        conversation.LastMessageAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
     }
 
     // ── Reads ─────────────────────────────────────────────────────────────────
@@ -257,7 +357,8 @@ public class WhatsAppInboxService(
                 : c.Agent.WhatsAppMode == WhatsAppMode.Inbox ? "Inbox" : "Agent",
             c.HumanTakeover,
             c.TakeoverReason,
-            c.TakeoverAt);
+            c.TakeoverAt,
+            c.AwaitingHumanSince);
 
     public async Task<IEnumerable<InboxConversationItem>> GetConversationsAsync(
         int companyId, int? agentId = null, InboxConversationStatus? status = null)
@@ -466,6 +567,7 @@ public class WhatsAppInboxService(
                 .SetProperty(c => c.TakeoverReason, (string?)null)
                 .SetProperty(c => c.TakeoverAt, (DateTime?)null)
                 .SetProperty(c => c.TakeoverByUserId, (int?)null)
+                .SetProperty(c => c.AwaitingHumanSince, (DateTime?)null)
                 .SetProperty(c => c.UpdatedAt, now), ct);
     }
 
@@ -521,9 +623,12 @@ public class WhatsAppInboxService(
         conversation.UnreadCount = 0; // replying implies you've read it
         Reopen(conversation); // replying to a resolved thread makes it live again
         // Hybrid: a person answering means a person is handling it now — the AI
-        // must not talk over them.
-        if (conversation.Agent.WhatsAppMode == WhatsAppMode.Hybrid && !conversation.HumanTakeover)
+        // must not talk over them. Answering an AI escalation turns it into an
+        // ordinary takeover, so the escalation timeout no longer applies.
+        if (conversation.Agent.WhatsAppMode == WhatsAppMode.Hybrid
+            && (!conversation.HumanTakeover || conversation.TakeoverReason == "ai_escalation"))
             TakeOver(conversation, "reply", userId);
+        conversation.AwaitingHumanSince = null; // a person replied
         await db.SaveChangesAsync();
 
         return new InboxMessageItem(

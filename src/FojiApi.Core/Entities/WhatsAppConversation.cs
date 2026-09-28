@@ -64,6 +64,14 @@ public class WhatsAppConversation : BaseEntity
 
     public int? TakeoverByUserId { get; set; }
 
+    /// <summary>
+    /// Hybrid: when the customer's request for a person started waiting. Set when
+    /// the AI escalates; cleared only once a person replies, takes the
+    /// conversation, or it's resolved. Survives the escalation timeout — the AI
+    /// may be answering again, but the customer still wants a person.
+    /// </summary>
+    public DateTime? AwaitingHumanSince { get; set; }
+
     // Navigation
     public Company Company { get; set; } = null!;
     public Agent Agent { get; set; } = null!;

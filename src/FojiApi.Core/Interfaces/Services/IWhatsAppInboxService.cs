@@ -29,13 +29,16 @@ public record InboxConversationItem(
     bool HumanTakeover,
     /// <summary>"manual", "reply" or "ai_escalation".</summary>
     string? TakeoverReason,
-    DateTime? TakeoverAt
+    DateTime? TakeoverAt,
+    /// <summary>Hybrid: the customer asked for a person and nobody has answered yet.</summary>
+    DateTime? AwaitingHumanSince
 );
 
 /// <summary>What the worker needs to know after recording an inbound message.</summary>
 /// <param name="Duplicate">Already recorded (a webhook retry) — don't answer it again.</param>
 /// <param name="HumanTakeover">A person is handling this conversation — the AI must stay quiet.</param>
-public record InboundRecordResult(int? ConversationId, bool Duplicate, bool HumanTakeover);
+/// <param name="AwaitingHuman">The team was already called for this customer — the AI mustn't call them again.</param>
+public record InboundRecordResult(int? ConversationId, bool Duplicate, bool HumanTakeover, bool AwaitingHuman = false);
 
 public record InboxMessageItem(
     int Id,
@@ -82,6 +85,14 @@ public interface IWhatsAppInboxService
 
     /// <summary>Hybrid: hands the conversation back to the AI.</summary>
     Task<InboxConversationItem?> ReleaseToAiAsync(int companyId, int conversationId);
+
+    /// <summary>
+    /// Hybrid safety net: conversations the AI escalated that no person picked up
+    /// within <paramref name="timeout"/>. The customer gets one honest "the team
+    /// will get back to you here" message and the AI resumes, while the inbox
+    /// keeps flagging that they want a person. Returns how many were handled.
+    /// </summary>
+    Task<int> HandleUnansweredEscalationsAsync(TimeSpan timeout, CancellationToken ct = default);
 
     /// <param name="status">Filter to Open or Resolved; null returns both.</param>
     Task<IEnumerable<InboxConversationItem>> GetConversationsAsync(
