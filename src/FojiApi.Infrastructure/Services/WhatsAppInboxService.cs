@@ -218,10 +218,57 @@ public class WhatsAppInboxService(
     public async Task MarkReadAsync(int companyId, int conversationId)
     {
         var conversation = await db.WhatsAppConversations
+            .Include(c => c.Agent)
             .FirstOrDefaultAsync(c => c.CompanyId == companyId && c.Id == conversationId);
         if (conversation == null || conversation.UnreadCount == 0) return;
         conversation.UnreadCount = 0;
         await db.SaveChangesAsync();
+
+        // Blue ticks on the customer's phone, now that a person has actually
+        // opened the thread. Reading the newest message marks everything before
+        // it as read too, so one receipt is enough.
+        var lastInboundWamId = await db.WhatsAppMessages
+            .Where(m => m.ConversationId == conversationId
+                        && m.CompanyId == companyId
+                        && m.Direction == MessageDirection.Inbound
+                        && m.WamId != null)
+            .OrderByDescending(m => m.CreatedAt)
+            .Select(m => m.WamId)
+            .FirstOrDefaultAsync();
+
+        if (lastInboundWamId != null)
+            await SendReadReceiptAsync(conversation, lastInboundWamId);
+    }
+
+    /// <summary>
+    /// Best-effort: a failed receipt only means grey ticks stay grey, so it's
+    /// logged and never surfaced to the team member who opened the thread.
+    /// </summary>
+    private async Task SendReadReceiptAsync(WhatsAppConversation conversation, string wamId)
+    {
+        try
+        {
+            var token = ResolveToken(conversation.Agent);
+            if (string.IsNullOrEmpty(token)) return;
+
+            var client = httpClientFactory.CreateClient();
+            client.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var response = await client.PostAsJsonAsync(
+                $"https://graph.facebook.com/{GraphVersion}/{conversation.PhoneNumberId}/messages",
+                new { messaging_product = "whatsapp", status = "read", message_id = wamId },
+                timeout.Token);
+
+            if (!response.IsSuccessStatusCode)
+                logger.LogWarning("WhatsApp read receipt failed ({Status}) for conversation {Id}",
+                    (int)response.StatusCode, conversation.Id);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "WhatsApp read receipt failed for conversation {Id}", conversation.Id);
+        }
     }
 
     public async Task<InboxConversationItem?> AssignAsync(int companyId, int conversationId, int? userId)
