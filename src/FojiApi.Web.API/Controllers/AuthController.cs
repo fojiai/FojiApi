@@ -29,8 +29,26 @@ public class AuthController(IAuthService authService) : ControllerBase
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> Login([FromBody] LoginRequest req)
     {
-        var result = await authService.LoginAsync(req.Email, req.Password);
+        var result = await authService.LoginAsync(req.Email, req.Password, req.Client, req.DeviceName);
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Mobile app: trade a refresh token for a fresh access token (and a rotated
+    /// refresh token). 401 means the session is over — log in again.
+    /// </summary>
+    [HttpPost("refresh")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> Refresh([FromBody] RefreshRequest req)
+        => Ok(await authService.RefreshAsync(req.RefreshToken));
+
+    /// <summary>Mobile app logout: revokes the refresh token on the server.</summary>
+    [HttpPost("logout")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> Logout([FromBody] RefreshRequest req)
+    {
+        await authService.LogoutAsync(req.RefreshToken);
+        return NoContent();
     }
 
     [HttpPost("forgot-password")]
@@ -75,7 +93,20 @@ public record LoginRequest(
     string Email,
 
     [param: System.ComponentModel.DataAnnotations.Required]
-    string Password
+    string Password,
+
+    /// <summary>"mobile" for the app — it also receives a refresh token.</summary>
+    [param: System.ComponentModel.DataAnnotations.StringLength(20)]
+    string? Client = null,
+
+    [param: System.ComponentModel.DataAnnotations.StringLength(100)]
+    string? DeviceName = null
+);
+
+public record RefreshRequest(
+    [param: System.ComponentModel.DataAnnotations.Required]
+    [param: System.ComponentModel.DataAnnotations.StringLength(200)]
+    string RefreshToken
 );
 
 public record ForgotPasswordRequest(

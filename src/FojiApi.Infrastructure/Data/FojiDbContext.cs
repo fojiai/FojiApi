@@ -7,6 +7,7 @@ namespace FojiApi.Infrastructure.Data;
 public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(options)
 {
     public DbSet<User> Users => Set<User>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Company> Companies => Set<Company>();
     public DbSet<UserCompany> UserCompanies => Set<UserCompany>();
     public DbSet<Agent> Agents => Set<Agent>();
@@ -393,6 +394,17 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.HasOne(c => c.Agent).WithMany().HasForeignKey(c => c.AgentId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(c => c.Contact).WithMany().HasForeignKey(c => c.ContactId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(c => c.AssignedUser).WithMany().HasForeignKey(c => c.AssignedUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<RefreshToken>(e =>
+        {
+            e.HasKey(t => t.Id);
+            e.HasIndex(t => t.TokenHash).IsUnique();
+            e.HasIndex(t => new { t.UserId, t.RevokedAt });
+            e.Property(t => t.TokenHash).HasMaxLength(64).IsRequired();
+            e.Property(t => t.ReplacedByTokenHash).HasMaxLength(64);
+            e.Property(t => t.DeviceName).HasMaxLength(100);
+            e.HasOne(t => t.User).WithMany().HasForeignKey(t => t.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<WhatsAppUsageDay>(e =>
