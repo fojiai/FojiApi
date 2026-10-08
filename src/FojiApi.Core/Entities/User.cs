@@ -15,6 +15,14 @@ public class User : BaseEntity
     public string? PasswordResetToken { get; set; }
     public DateTime? PasswordResetTokenExpiresAt { get; set; }
 
+    /// <summary>
+    /// JSON array of onboarding keys this person has finished: guided tours
+    /// ("tour:agent-new") and getting-started steps they ticked by hand
+    /// ("step:embed"). Kept per user, not per browser, so a tour isn't shown
+    /// again on every new device.
+    /// </summary>
+    public string? OnboardingProgress { get; set; }
+
     // Navigation
     public ICollection<UserCompany> UserCompanies { get; set; } = [];
     public ICollection<Invitation> SentInvitations { get; set; } = [];

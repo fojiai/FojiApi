@@ -19,6 +19,20 @@ public class UsersController(IUserService userService, ICurrentUserService curre
         await userService.ChangePasswordAsync(CurrentUser.UserId, req.CurrentPassword, req.NewPassword);
         return Ok(new { message = "Password changed successfully." });
     }
+
+    /// <summary>Which guided tours / getting-started steps this person has finished.</summary>
+    [HttpGet("me/onboarding")]
+    public async Task<IActionResult> GetOnboarding()
+        => Ok(await userService.GetOnboardingAsync(CurrentUser.UserId));
+
+    [HttpPost("me/onboarding/{key}")]
+    public async Task<IActionResult> CompleteOnboarding(string key)
+        => Ok(await userService.CompleteOnboardingAsync(CurrentUser.UserId, key));
+
+    /// <summary>"Show the tours again" from the profile menu.</summary>
+    [HttpDelete("me/onboarding")]
+    public async Task<IActionResult> ResetOnboarding()
+        => Ok(await userService.ResetOnboardingAsync(CurrentUser.UserId));
 }
 
 public record UpdateUserRequest(

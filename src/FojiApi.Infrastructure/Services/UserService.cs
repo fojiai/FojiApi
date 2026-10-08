@@ -2,6 +2,8 @@ using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
 using FojiApi.Core.Validation;
 using FojiApi.Infrastructure.Data;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FojiApi.Infrastructure.Services;
@@ -28,6 +30,49 @@ public class UserService(FojiDbContext db) : IUserService
         await db.SaveChangesAsync();
 
         return await GetProfileAsync(userId);
+    }
+
+    // Keys look like "tour:agent-new" or "step:embed". The cap keeps a buggy or
+    // hostile client from turning one user row into a dumping ground.
+    private static readonly Regex OnboardingKeyPattern = new(@"^[a-z]+:[a-z0-9-]{1,40}$", RegexOptions.Compiled);
+    private const int MaxOnboardingKeys = 100;
+
+    public async Task<OnboardingResult> GetOnboardingAsync(int userId)
+    {
+        var user = await db.Users.FindAsync(userId) ?? throw new NotFoundException("User not found.");
+        return new OnboardingResult(ParseOnboarding(user.OnboardingProgress));
+    }
+
+    public async Task<OnboardingResult> CompleteOnboardingAsync(int userId, string key)
+    {
+        key = (key ?? string.Empty).Trim().ToLowerInvariant();
+        if (!OnboardingKeyPattern.IsMatch(key))
+            throw new DomainException("Invalid onboarding key.");
+
+        var user = await db.Users.FindAsync(userId) ?? throw new NotFoundException("User not found.");
+        var done = ParseOnboarding(user.OnboardingProgress);
+        if (!done.Contains(key) && done.Count < MaxOnboardingKeys)
+        {
+            done.Add(key);
+            user.OnboardingProgress = JsonSerializer.Serialize(done);
+            await db.SaveChangesAsync();
+        }
+        return new OnboardingResult(done);
+    }
+
+    public async Task<OnboardingResult> ResetOnboardingAsync(int userId)
+    {
+        var user = await db.Users.FindAsync(userId) ?? throw new NotFoundException("User not found.");
+        user.OnboardingProgress = null;
+        await db.SaveChangesAsync();
+        return new OnboardingResult([]);
+    }
+
+    private static List<string> ParseOnboarding(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; }
+        catch (JsonException) { return []; }
     }
 
     public async Task ChangePasswordAsync(int userId, string currentPassword, string newPassword)
