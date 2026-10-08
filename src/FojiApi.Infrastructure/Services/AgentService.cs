@@ -63,7 +63,9 @@ public class AgentService(
             agent.WhatsAppNeedsReconnect,
             agent.WhatsAppTokenExpiresAt,
             agent.WhatsAppBillingIssue,
-            agent.WhatsAppSplitReplies
+            agent.WhatsAppSplitReplies,
+            // Same "learned" count as the agent list, so every screen agrees.
+            agent.Files.Count(f => f.ProcessingStatus == FileProcessingStatus.Ready)
         );
     }
 
