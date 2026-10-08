@@ -30,7 +30,8 @@ public record HistoryMessage(
     string? MediaFileName = null
 );
 
-public record HistoryThread(HistoryItem Conversation, IEnumerable<HistoryMessage> Messages);
+/// <param name="MessagesUnavailable">The messages exist but couldn't be loaded right now (not the same as an empty or expired chat).</param>
+public record HistoryThread(HistoryItem Conversation, IEnumerable<HistoryMessage> Messages, bool MessagesUnavailable = false);
 
 public record HistoryPage(IEnumerable<HistoryItem> Items, int Total);
 

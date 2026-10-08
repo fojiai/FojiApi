@@ -143,18 +143,19 @@ public class ConversationHistoryService(
         var header = new HistoryItem("session", s.Id, s.AgentId, s.AgentName, s.Channel,
             s.Lead?.Name ?? s.ContactName, s.Lead?.Phone ?? s.ContactWaId, s.Lead?.Email,
             s.StartedAt, s.LastMessageAt, s.LastPreview, false);
-        return new HistoryThread(header, await FetchLogAsync(s.SessionId, s.AgentId));
+        var log = await FetchLogAsync(s.SessionId, s.AgentId);
+        return new HistoryThread(header, log ?? [], MessagesUnavailable: log == null);
     }
 
-    /// <summary>The AI's log for this chat, from foji-ai-api. Empty if it can't be reached.</summary>
-    private async Task<List<HistoryMessage>> FetchLogAsync(string sessionId, int agentId)
+    /// <summary>The AI's log for this chat, from foji-ai-api. Null if it can't be reached.</summary>
+    private async Task<List<HistoryMessage>?> FetchLogAsync(string sessionId, int agentId)
     {
         var baseUrl = configuration["AiApi:BaseUrl"]?.TrimEnd('/');
         var key = configuration["InternalApiKey"];
         if (string.IsNullOrEmpty(baseUrl) || string.IsNullOrEmpty(key))
         {
             logger.LogError("Conversation history: AiApi:BaseUrl or InternalApiKey not configured");
-            return [];
+            return null;
         }
 
         try
@@ -167,8 +168,8 @@ public class ConversationHistoryService(
             var resp = await httpClientFactory.CreateClient().SendAsync(req);
             if (!resp.IsSuccessStatusCode)
             {
-                logger.LogError("Chat log fetch for {SessionId} returned {Status}", sessionId, resp.StatusCode);
-                return [];
+                logger.LogError("Chat log fetch for {SessionId} from {BaseUrl} returned {Status}", sessionId, baseUrl, resp.StatusCode);
+                return null;
             }
             var body = await resp.Content.ReadFromJsonAsync<LogResponse>();
             return (body?.Messages ?? [])
@@ -180,8 +181,8 @@ public class ConversationHistoryService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Could not fetch the chat log for {SessionId}", sessionId);
-            return [];
+            logger.LogError(ex, "Could not fetch the chat log for {SessionId} from {BaseUrl}", sessionId, baseUrl);
+            return null;
         }
     }
 

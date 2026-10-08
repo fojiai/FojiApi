@@ -25,7 +25,10 @@ public class AgentService(
                 a.IndustryType.ToString(), a.AgentLanguage.ToString(),
                 a.AgentToken, a.WhatsAppEnabled,
                 a.Files.Count(f => f.ProcessingStatus == FileProcessingStatus.Ready),
-                a.CreatedAt))
+                a.CreatedAt,
+                // The app's Home and agent cards show WhatsApp state from the list.
+                a.WhatsAppPhoneNumberId, a.WhatsAppMode.ToString(),
+                a.WhatsAppNeedsReconnect, a.WhatsAppBillingIssue))
             .ToListAsync();
     }
 
