@@ -67,6 +67,7 @@ public static class DependencyInjection
         services.AddScoped<IPlatformSettingService, PlatformSettingService>();
         services.AddScoped<IWhatsAppWebhookService, WhatsAppWebhookService>();
         services.AddScoped<IWhatsAppInboxService, WhatsAppInboxService>();
+        services.AddScoped<IConversationHistoryService, ConversationHistoryService>();
         services.AddScoped<IWhatsAppOnboardingService, WhatsAppOnboardingService>();
         services.AddScoped<IWhatsAppUsageService, WhatsAppUsageService>();
         // Keeps 60-day Embedded Signup tokens alive without the customer ever

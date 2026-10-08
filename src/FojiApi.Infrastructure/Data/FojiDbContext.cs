@@ -34,6 +34,7 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
     public DbSet<Meeting> Meetings => Set<Meeting>();
     public DbSet<EmailLog> EmailLogs => Set<EmailLog>();
     public DbSet<WhatsAppConversation> WhatsAppConversations => Set<WhatsAppConversation>();
+    public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
     public DbSet<WhatsAppMessage> WhatsAppMessages => Set<WhatsAppMessage>();
     public DbSet<WhatsAppUsageDay> WhatsAppUsageDays => Set<WhatsAppUsageDay>();
 
@@ -394,6 +395,21 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.HasOne(c => c.Agent).WithMany().HasForeignKey(c => c.AgentId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(c => c.Contact).WithMany().HasForeignKey(c => c.ContactId).OnDelete(DeleteBehavior.SetNull);
             e.HasOne(c => c.AssignedUser).WithMany().HasForeignKey(c => c.AssignedUserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<ChatSession>(e =>
+        {
+            e.HasKey(c => c.Id);
+            // foji-ai-api upserts on this ("INSERT … ON CONFLICT").
+            e.HasIndex(c => new { c.AgentId, c.SessionId }).IsUnique();
+            e.HasIndex(c => new { c.CompanyId, c.LastMessageAt });
+            e.Property(c => c.Channel).HasMaxLength(20).IsRequired();
+            e.Property(c => c.SessionId).HasMaxLength(100).IsRequired();
+            e.Property(c => c.ContactWaId).HasMaxLength(30);
+            e.Property(c => c.ContactName).HasMaxLength(200);
+            e.Property(c => c.LastPreview).HasMaxLength(300);
+            e.HasOne(c => c.Company).WithMany().HasForeignKey(c => c.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(c => c.Agent).WithMany().HasForeignKey(c => c.AgentId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<RefreshToken>(e =>
