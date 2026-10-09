@@ -37,6 +37,9 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
     public DbSet<ChatSession> ChatSessions => Set<ChatSession>();
     public DbSet<WhatsAppMessage> WhatsAppMessages => Set<WhatsAppMessage>();
     public DbSet<WhatsAppUsageDay> WhatsAppUsageDays => Set<WhatsAppUsageDay>();
+    public DbSet<BillingCheckout> BillingCheckouts => Set<BillingCheckout>();
+    public DbSet<BillingPayment> BillingPayments => Set<BillingPayment>();
+    public DbSet<BillingWebhookEvent> BillingWebhookEvents => Set<BillingWebhookEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -64,6 +67,7 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.Property(c => c.Description).HasMaxLength(1000);
             e.Property(c => c.AccountType).HasConversion<string>().HasMaxLength(20).HasDefaultValue(AccountType.Business);
             e.Property(c => c.CpfCnpj).HasMaxLength(14); // CPF=11, CNPJ=14 digits
+            e.Property(c => c.AsaasCustomerId).HasMaxLength(50);
             e.Property(c => c.AdminNotes).HasMaxLength(2000);
         });
 
@@ -141,7 +145,8 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
             e.Property(p => p.Name).HasMaxLength(100).IsRequired();
             e.Property(p => p.Slug).HasMaxLength(50).IsRequired();
             e.Property(p => p.MonthlyPrice).HasPrecision(10, 2);
-            e.Property(p => p.Currency).HasMaxLength(3).HasDefaultValue("USD");
+            e.Property(p => p.YearlyPrice).HasPrecision(10, 2);
+            e.Property(p => p.Currency).HasMaxLength(3).HasDefaultValue("BRL");
             e.Property(p => p.IsPublic).HasDefaultValue(true);
             e.HasOne(p => p.CustomForCompany)
                 .WithMany()
@@ -155,10 +160,69 @@ public class FojiDbContext(DbContextOptions<FojiDbContext> options) : DbContext(
         {
             e.HasKey(s => s.Id);
             e.Property(s => s.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(s => s.Cycle).HasConversion<string>().HasMaxLength(10).HasDefaultValue(BillingCycle.Monthly);
+            e.Property(s => s.PaymentMethod).HasConversion<string>().HasMaxLength(20);
+            e.Property(s => s.AsaasSubscriptionId).HasMaxLength(50);
+            e.Property(s => s.CardToken).HasMaxLength(100);
+            e.Property(s => s.CardBrand).HasMaxLength(30);
+            e.Property(s => s.CardLast4).HasMaxLength(4);
+            e.Property(s => s.Price).HasPrecision(10, 2);
             e.Property(s => s.AdminNotes).HasMaxLength(1000);
+            e.HasIndex(s => s.AsaasSubscriptionId).IsUnique().HasFilter("\"AsaasSubscriptionId\" IS NOT NULL");
+            e.HasIndex(s => new { s.CompanyId, s.Status });
             e.HasOne(s => s.Company).WithMany(c => c.Subscriptions).HasForeignKey(s => s.CompanyId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(s => s.Plan).WithMany(p => p.Subscriptions).HasForeignKey(s => s.PlanId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(s => s.PendingPlan).WithMany().HasForeignKey(s => s.PendingPlanId).OnDelete(DeleteBehavior.SetNull).IsRequired(false);
             e.HasOne(s => s.AssignedByAdmin).WithMany().HasForeignKey(s => s.AssignedByAdminId).OnDelete(DeleteBehavior.SetNull).IsRequired(false);
+        });
+
+        // Billing (Asaas)
+        modelBuilder.Entity<BillingCheckout>(e =>
+        {
+            e.HasKey(c => c.Id);
+            e.Property(c => c.Kind).HasConversion<string>().HasMaxLength(20);
+            e.Property(c => c.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(c => c.Cycle).HasConversion<string>().HasMaxLength(10);
+            e.Property(c => c.Method).HasConversion<string>().HasMaxLength(20);
+            e.Property(c => c.Amount).HasPrecision(10, 2);
+            e.Property(c => c.AsaasCheckoutId).HasMaxLength(100);
+            e.Property(c => c.AsaasSubscriptionId).HasMaxLength(50);
+            e.Property(c => c.AsaasPaymentId).HasMaxLength(50);
+            e.Property(c => c.Url).HasMaxLength(500);
+            e.HasIndex(c => c.AsaasCheckoutId);
+            e.HasIndex(c => c.AsaasSubscriptionId);
+            e.HasIndex(c => new { c.CompanyId, c.Status });
+            e.HasOne(c => c.Company).WithMany().HasForeignKey(c => c.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(c => c.Plan).WithMany().HasForeignKey(c => c.PlanId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<BillingPayment>(e =>
+        {
+            e.HasKey(p => p.Id);
+            e.Property(p => p.Kind).HasConversion<string>().HasMaxLength(20);
+            e.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(p => p.AsaasPaymentId).HasMaxLength(50);
+            e.Property(p => p.Value).HasPrecision(10, 2);
+            e.Property(p => p.BillingType).HasMaxLength(30);
+            e.Property(p => p.InvoiceUrl).HasMaxLength(500);
+            e.Property(p => p.NfseUrl).HasMaxLength(500);
+            e.Property(p => p.Description).HasMaxLength(500);
+            e.HasIndex(p => p.AsaasPaymentId).IsUnique().HasFilter("\"AsaasPaymentId\" IS NOT NULL");
+            // One overage charge per usage window, even with several API instances sweeping.
+            e.HasIndex(p => new { p.CompanyId, p.Kind, p.PeriodStart }).IsUnique().HasFilter("\"PeriodStart\" IS NOT NULL");
+            e.HasIndex(p => new { p.CompanyId, p.DueDate });
+            e.HasOne(p => p.Company).WithMany().HasForeignKey(p => p.CompanyId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(p => p.Subscription).WithMany().HasForeignKey(p => p.SubscriptionId).OnDelete(DeleteBehavior.SetNull).IsRequired(false);
+        });
+
+        modelBuilder.Entity<BillingWebhookEvent>(e =>
+        {
+            e.HasKey(w => w.Id);
+            e.Property(w => w.EventId).HasMaxLength(100).IsRequired();
+            e.Property(w => w.Event).HasMaxLength(100).IsRequired();
+            e.Property(w => w.LastError).HasMaxLength(1000);
+            e.HasIndex(w => w.EventId).IsUnique();
+            e.HasIndex(w => w.ProcessedAt);
         });
 
         // Invitation

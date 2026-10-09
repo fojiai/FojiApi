@@ -34,9 +34,68 @@ public enum SubscriptionStatus
 {
     Trialing,
     Active,
+    /// <summary>A charge is overdue. Still served during the grace period (Billing:GraceDays).</summary>
     PastDue,
     Canceled,
-    Unpaid
+    /// <summary>Overdue past the grace period: features locked until the customer pays.</summary>
+    Unpaid,
+    /// <summary>Created at Asaas but the first payment hasn't been confirmed yet. Never served.</summary>
+    Incomplete
+}
+
+public enum BillingCycle
+{
+    Monthly,
+    Yearly
+}
+
+/// <summary>How a subscription is paid. Pix is only offered on yearly plans.</summary>
+public enum BillingPaymentMethod
+{
+    CreditCard,
+    Pix,
+    /// <summary>Assigned by a super-admin (invoiced outside the app).</summary>
+    Manual
+}
+
+public enum BillingPaymentKind
+{
+    /// <summary>A recurring charge of the subscription.</summary>
+    Subscription,
+    /// <summary>The prorated difference when upgrading mid-period.</summary>
+    Upgrade,
+    /// <summary>WhatsApp messages beyond the plan's allowance.</summary>
+    Overage
+}
+
+public enum BillingPaymentStatus
+{
+    Pending,
+    Confirmed,
+    Received,
+    Overdue,
+    Refunded,
+    Deleted,
+    /// <summary>Below the minimum chargeable value; recorded but not charged.</summary>
+    Waived
+}
+
+public enum BillingCheckoutKind
+{
+    /// <summary>A new subscription (from trial, no plan or canceled).</summary>
+    NewSubscription,
+    /// <summary>Prorated upgrade payment on an existing subscription.</summary>
+    Upgrade,
+    /// <summary>A subscription that replaces the current one (new card, new cycle, resume).</summary>
+    Replacement
+}
+
+public enum BillingCheckoutStatus
+{
+    Pending,
+    Completed,
+    Expired,
+    Canceled
 }
 
 public enum AiProvider

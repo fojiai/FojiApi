@@ -16,6 +16,7 @@ public class CompanyService(
     IStorageService storage,
     IHttpClientFactory httpClientFactory,
     IConfiguration configuration,
+    IBillingService billing,
     ILogger<CompanyService> logger) : ICompanyService
 {
     /// <summary>How many companies one user may own via self-serve signup.</summary>
@@ -118,14 +119,14 @@ public class CompanyService(
             ?? throw new NotFoundException("Company not found.");
 
         var activeSub = company.Subscriptions
-            .Where(s => s.Status is SubscriptionStatus.Active or SubscriptionStatus.Trialing)
+            .Where(s => FojiApi.Infrastructure.Billing.SubscriptionSelector.Serving.Contains(s.Status))
             .OrderByDescending(s => s.CreatedAt)
             .FirstOrDefault();
 
         return new CompanyDetailResult(
             company.Id, company.Name, company.Slug, company.Description, company.LogoUrl,
             activeSub == null ? null : new ActiveSubscriptionResult(
-                activeSub.Status.ToString().ToLower(), activeSub.Plan.Name,
+                FojiApi.Infrastructure.Billing.SubscriptionSelector.StatusName(activeSub.Status), activeSub.Plan.Name,
                 activeSub.Plan.MaxAgents, activeSub.Plan.HasWhatsApp,
                 activeSub.CurrentPeriodEnd, activeSub.TrialEndsAt)
         );
@@ -251,11 +252,11 @@ public class CompanyService(
             .Select(a => a.Id)
             .ToListAsync();
 
-        // Cancel active subscriptions first. (The Stripe webhook re-syncs, but we
-        // also cancel in the DB immediately so nothing keeps billing.)
+        // Stop charging at Asaas before anything else: a deleted company must never
+        // keep paying. This throws if Asaas can't be reached, so nothing is deleted.
+        await billing.StopAsaasSubscriptionsAsync(companyId);
         var activeSubs = await db.Subscriptions
-            .Where(s => s.CompanyId == companyId &&
-                        (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
+            .Where(s => s.CompanyId == companyId && s.Status != SubscriptionStatus.Canceled)
             .ToListAsync();
         foreach (var sub in activeSubs)
         {

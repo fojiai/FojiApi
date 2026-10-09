@@ -26,6 +26,19 @@ public class AdminController(
 
     // ── Admin invitations ────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Runs the billing sweep now (grace periods, period ends, scheduled downgrades,
+    /// WhatsApp overage) instead of waiting for the hourly job. Safe to repeat.
+    /// </summary>
+    [HttpPost("billing/sweep")]
+    public async Task<IActionResult> RunBillingSweep(
+        [FromServices] FojiApi.Infrastructure.Billing.BillingMaintenanceService sweep, CancellationToken ct)
+    {
+        EnsureSuperAdmin();
+        await sweep.RunAsync(ct);
+        return Ok(new { ok = true });
+    }
+
     [HttpGet("invitations")]
     public async Task<IActionResult> ListInvitations()
     {
@@ -103,7 +116,7 @@ public class AdminController(
     /// <summary>
     /// POST /api/admin/companies/{id}/assign-plan
     /// Assign any plan (including private custom plans) to a company,
-    /// bypassing Stripe. Previous active subscriptions are cancelled.
+    /// without going through checkout. Previous active subscriptions are cancelled.
     /// </summary>
     [HttpPost("companies/{id:int}/assign-plan")]
     public async Task<IActionResult> AssignPlan(int id, [FromBody] AssignPlanRequest req)

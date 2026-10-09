@@ -35,8 +35,9 @@ public class PlanService(FojiDbContext db) : IPlanService
             Slug = req.Slug,
             Description = req.Description,
             MonthlyPrice = req.MonthlyPrice,
-            Currency = req.Currency ?? "USD",
-            StripePriceId = req.StripePriceId,
+            // Asaas only charges in reais.
+            Currency = "BRL",
+            YearlyPrice = ValidYearly(req.YearlyPrice),
             MaxAgents = req.MaxAgents,
             MaxMembers = req.MaxMembers,
             HasWhatsApp = req.HasWhatsApp,
@@ -67,8 +68,10 @@ public class PlanService(FojiDbContext db) : IPlanService
         plan.Slug = req.Slug;
         plan.Description = req.Description;
         plan.MonthlyPrice = req.MonthlyPrice;
-        plan.Currency = req.Currency ?? plan.Currency;
-        plan.StripePriceId = req.StripePriceId;
+        // Existing subscribers keep the price they signed up with (Subscription.Price);
+        // a new price applies to new subscriptions and plan changes.
+        plan.Currency = "BRL";
+        plan.YearlyPrice = ValidYearly(req.YearlyPrice);
         plan.MaxAgents = req.MaxAgents;
         plan.MaxMembers = req.MaxMembers;
         plan.HasWhatsApp = req.HasWhatsApp;
@@ -96,7 +99,7 @@ public class PlanService(FojiDbContext db) : IPlanService
 
         var hasActive = await db.Subscriptions
             .AnyAsync(s => s.PlanId == id &&
-                          (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing));
+                          s.Status != SubscriptionStatus.Canceled);
 
         if (hasActive)
             throw new InvalidOperationException("Cannot delete a plan that has active subscriptions.");
@@ -106,8 +109,11 @@ public class PlanService(FojiDbContext db) : IPlanService
         await db.SaveChangesAsync();
     }
 
+    private static decimal? ValidYearly(decimal? yearly) =>
+        yearly is null or <= 0 ? null : yearly;
+
     private static PlanResult ToResult(Plan p)
-        => new(p.Id, p.Name, p.Slug, p.Description, p.MonthlyPrice, p.Currency, p.StripePriceId, p.MaxAgents, p.MaxMembers,
+        => new(p.Id, p.Name, p.Slug, p.Description, p.MonthlyPrice, p.Currency, p.YearlyPrice, p.MaxAgents, p.MaxMembers,
                p.HasWhatsApp, p.HasEscalationContacts, p.HasGoogleCalendar, p.HasCrm, p.MaxConversationsPerMonth, p.MaxMessagesPerMonth,
                p.TrialDays, p.IsPublic, p.IsActive, p.CustomForCompanyId,
                p.WhatsAppMessagesPerMonth, p.WhatsAppOverageCentavos, p.WhatsAppAllowMarketing);

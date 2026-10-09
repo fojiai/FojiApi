@@ -21,7 +21,6 @@
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.0.1" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <PackageReference Include="Resend" Version="0.2.2" />
-    <PackageReference Include="Stripe.net" Version="47.3.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.0.1" />
   </ItemGroup>
 
@@ -31,4 +30,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Asaas\checkout-item.b64" LogicalName="FojiApi.Infrastructure.Asaas.checkout-item.b64" />
+  </ItemGroup>
 </Project>

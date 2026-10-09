@@ -1,3 +1,4 @@
+using FojiApi.Infrastructure.Billing;
 using FojiApi.Core.Entities;
 using FojiApi.Core.Enums;
 using FojiApi.Core.Interfaces.Services;
@@ -118,7 +119,7 @@ public class WhatsAppUsageService(
     {
         var plan = await db.Subscriptions
             .Where(s => s.CompanyId == companyId
-                        && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
+                        && SubscriptionSelector.Serving.Contains(s.Status))
             .OrderByDescending(s => s.CreatedAt)
             .Select(s => new { s.Plan.HasWhatsApp, s.Plan.WhatsAppMessagesPerMonth, s.Plan.WhatsAppOverageCentavos })
             .FirstOrDefaultAsync(ct);
@@ -137,28 +138,35 @@ public class WhatsAppUsageService(
     private async Task<bool> MarketingAllowedAsync(int companyId, CancellationToken ct)
         => await db.Subscriptions
             .Where(s => s.CompanyId == companyId
-                        && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
+                        && SubscriptionSelector.Serving.Contains(s.Status))
             .OrderByDescending(s => s.CreatedAt)
             .Select(s => s.Plan.WhatsAppAllowMarketing)
             .FirstOrDefaultAsync(ct);
 
     /// <summary>
-    /// Align the meter with what the customer is billed for. Falls back to the
-    /// calendar month when there is no Stripe period — otherwise a mid-month
-    /// upgrade would silently reset someone's allowance.
+    /// The monthly allowance window, anchored on the day the paid period started, so it
+    /// lines up with the bill (and a yearly plan still gets a monthly allowance; the
+    /// overage sweep in BillingMaintenanceService uses the same windows). Falls back to
+    /// the calendar month when there is no period (trial without dates, admin plans).
+    /// End is inclusive, as the usage days are summed with &lt;=.
     /// </summary>
     private async Task<(DateOnly Start, DateOnly End)> GetBillingPeriodAsync(int companyId, CancellationToken ct)
     {
-        var sub = await db.Subscriptions
+        var start = await db.Subscriptions
             .Where(s => s.CompanyId == companyId
-                        && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
+                        && SubscriptionSelector.Serving.Contains(s.Status))
             .OrderByDescending(s => s.CreatedAt)
-            .Select(s => new { s.CurrentPeriodStart, s.CurrentPeriodEnd })
+            .Select(s => s.CurrentPeriodStart)
             .FirstOrDefaultAsync(ct);
 
         var now = DateTime.UtcNow;
-        if (sub?.CurrentPeriodStart is { } start && sub.CurrentPeriodEnd is { } end && end > now)
-            return (DateOnly.FromDateTime(start), DateOnly.FromDateTime(end));
+        var today = Core.Billing.BillingMath.TodayInBrasilia(now);
+        if (start is { } periodStart)
+        {
+            var anchor = DateOnly.FromDateTime(periodStart.Add(Core.Billing.BillingMath.BrasiliaOffset));
+            var window = Core.Billing.BillingMath.UsageWindow(anchor, today);
+            return (window.Start, window.End.AddDays(-1));
+        }
 
         var monthStart = new DateOnly(now.Year, now.Month, 1);
         return (monthStart, monthStart.AddMonths(1).AddDays(-1));

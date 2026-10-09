@@ -24,7 +24,8 @@ public record UpsertPlanRequest(
     string? Description,
     decimal MonthlyPrice,
     string Currency,
-    string? StripePriceId,
+    /// <summary>Whole-year price (card or Pix). Null = no yearly option.</summary>
+    decimal? YearlyPrice,
     int MaxAgents,
     int MaxMembers,
     bool HasWhatsApp,
@@ -51,7 +52,8 @@ public record PlanResult(
     string? Description,
     decimal MonthlyPrice,
     string Currency,
-    string? StripePriceId,
+    /// <summary>Whole-year price (card or Pix). Null = no yearly option.</summary>
+    decimal? YearlyPrice,
     int MaxAgents,
     int MaxMembers,
     bool HasWhatsApp,

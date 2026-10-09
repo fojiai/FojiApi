@@ -25,7 +25,7 @@ public record AdminCompanyDetail(
     AccountType AccountType,
     string? CpfCnpj,
     string? AdminNotes,
-    string? StripeCustomerId,
+    string? AsaasCustomerId,
     int MemberCount,
     int AgentCount,
     // Current subscription
@@ -77,7 +77,7 @@ public interface IAdminCompanyService
 
     /// <summary>
     /// Assign any plan (including private custom plans) directly to a company,
-    /// bypassing Stripe. Creates or replaces the active subscription.
+    /// without going through checkout. Creates or replaces the active subscription.
     /// </summary>
     Task AssignPlanAsync(int companyId, AssignPlanRequest request, int adminUserId);
 

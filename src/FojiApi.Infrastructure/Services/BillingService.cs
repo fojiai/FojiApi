@@ -1,515 +1,626 @@
+using FojiApi.Core.Billing;
 using FojiApi.Core.Entities;
 using FojiApi.Core.Enums;
 using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
+using FojiApi.Infrastructure.Asaas;
+using FojiApi.Infrastructure.Billing;
 using FojiApi.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Stripe;
-using Stripe.Checkout;
+using Microsoft.Extensions.Logging;
 
 namespace FojiApi.Infrastructure.Services;
 
-public class BillingService(FojiDbContext db, IConfiguration configuration, IEmailService emailService) : IBillingService
+/// <summary>
+/// Customer billing actions on top of Asaas. See IBillingService for the rules.
+/// Nothing here grants access by itself except free plan swaps: paid changes take
+/// effect when Asaas confirms the payment (BillingWebhookService).
+/// </summary>
+public class BillingService(
+    FojiDbContext db,
+    AsaasClient asaas,
+    BillingOperations ops,
+    BillingSettings settings,
+    IEmailService email,
+    ILogger<BillingService> logger) : IBillingService
 {
-    private string SecretKey => configuration["Stripe:SecretKey"]
-        ?? throw new InvalidOperationException("Stripe:SecretKey not configured");
-    private string WebhookSecret => configuration["Stripe:WebhookSecret"]
-        ?? throw new InvalidOperationException("Stripe:WebhookSecret not configured");
-    private string AppBaseUrl => configuration["App:BaseUrl"] ?? "https://app.foji.ai";
-
-    public async Task<string> CreateCheckoutSessionAsync(int companyId, int planId, int userId)
-    {
-        StripeConfiguration.ApiKey = SecretKey;
-
-        var plan = await db.Plans.FindAsync(planId);
-        if (plan == null || string.IsNullOrEmpty(plan.StripePriceId))
-            throw new DomainException("Plan not found or not yet configured for billing.");
-
-        var company = await db.Companies.FindAsync(companyId)
-            ?? throw new NotFoundException("Company not found.");
-
-        // Check for existing active subscription
-        var existingSub = await db.Subscriptions
-            .Include(s => s.Plan)
-            .Where(s => s.CompanyId == companyId &&
-                        s.StripeSubscriptionId != null &&
-                        (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
-            .OrderByDescending(s => s.CreatedAt)
-            .FirstOrDefaultAsync();
-
-        // If already subscribed with Stripe, redirect to the customer portal
-        // so the user can review and confirm the plan change themselves.
-        if (existingSub != null && !string.IsNullOrEmpty(existingSub.StripeSubscriptionId))
-        {
-            // Fetch the actual Stripe subscription to check the real current price
-            var stripeSub = await new SubscriptionService().GetAsync(existingSub.StripeSubscriptionId!);
-            var currentPriceId = stripeSub.Items.Data.FirstOrDefault()?.Price?.Id;
-
-            // Sync local DB if it drifted from Stripe
-            if (currentPriceId != null && currentPriceId != existingSub.Plan.StripePriceId)
-            {
-                var actualPlan = await db.Plans.FirstOrDefaultAsync(p => p.StripePriceId == currentPriceId);
-                if (actualPlan != null)
-                {
-                    existingSub.PlanId = actualPlan.Id;
-                    existingSub.Status = MapStatus(stripeSub.Status);
-                    existingSub.CurrentPeriodStart = stripeSub.CurrentPeriodStart;
-                    existingSub.CurrentPeriodEnd = stripeSub.CurrentPeriodEnd;
-                    await db.SaveChangesAsync();
-                }
-            }
-
-            // Now check against the real Stripe price, not just local DB
-            if (currentPriceId == plan.StripePriceId)
-                throw new DomainException("You are already on this plan.");
-
-            var portalSession = await new Stripe.BillingPortal.SessionService().CreateAsync(
-                new Stripe.BillingPortal.SessionCreateOptions
-                {
-                    Customer = company.StripeCustomerId,
-                    ReturnUrl = $"{AppBaseUrl}/billing",
-                    FlowData = new Stripe.BillingPortal.SessionFlowDataOptions
-                    {
-                        Type = "subscription_update_confirm",
-                        SubscriptionUpdateConfirm = new Stripe.BillingPortal.SessionFlowDataSubscriptionUpdateConfirmOptions
-                        {
-                            Subscription = existingSub.StripeSubscriptionId,
-                            Items =
-                            [
-                                new Stripe.BillingPortal.SessionFlowDataSubscriptionUpdateConfirmItemOptions
-                                {
-                                    Id = stripeSub.Items.Data.First().Id,
-                                    Price = plan.StripePriceId,
-                                    Quantity = 1,
-                                }
-                            ],
-                        },
-                    },
-                });
-            return portalSession.Url;
-        }
-
-        // No existing subscription — create a new checkout session
-        var customerId = await EnsureStripeCustomerAsync(company, userId);
-
-        var session = await new SessionService().CreateAsync(new SessionCreateOptions
-        {
-            Customer = customerId,
-            Mode = "subscription",
-            LineItems = [new SessionLineItemOptions { Price = plan.StripePriceId, Quantity = 1 }],
-            SuccessUrl = $"{AppBaseUrl}/billing?session_id={{CHECKOUT_SESSION_ID}}&status=success",
-            CancelUrl = $"{AppBaseUrl}/billing?status=canceled",
-            SubscriptionData = plan.TrialDays > 0
-                ? new SessionSubscriptionDataOptions { TrialPeriodDays = plan.TrialDays }
-                : null,
-            Metadata = new Dictionary<string, string>
-            {
-                ["companyId"] = companyId.ToString(),
-                ["planId"] = planId.ToString()
-            }
-        });
-
-        return session.Url;
-    }
-
-    public async Task<string> CreateCustomerPortalSessionAsync(int companyId)
-    {
-        StripeConfiguration.ApiKey = SecretKey;
-
-        var company = await db.Companies.FindAsync(companyId)
-            ?? throw new NotFoundException("Company not found.");
-
-        if (string.IsNullOrEmpty(company.StripeCustomerId))
-            throw new DomainException("No billing account found for this company.");
-
-        var session = await new Stripe.BillingPortal.SessionService().CreateAsync(
-            new Stripe.BillingPortal.SessionCreateOptions
-            {
-                Customer = company.StripeCustomerId,
-                ReturnUrl = $"{AppBaseUrl}/billing"
-            });
-
-        return session.Url;
-    }
-
-    /// <summary>
-    /// Dev switch — see PlanEnforcementService. When billing enforcement is off,
-    /// the subscription is reported with every feature unlocked and no limits, so
-    /// the dashboard stops showing upgrade prompts for gates the API isn't
-    /// applying either. Defaults to true.
-    /// </summary>
-    private bool EnforcementEnabled =>
-        configuration.GetValue<bool?>("Billing:EnforcementEnabled") ?? true;
-
-    private static SubscriptionPlanResult UnlockedPlan(int id, string name) =>
-        new(id, name, int.MaxValue, true, true, true, true, 0, 0);
+    // ── Reading ──────────────────────────────────────────────────────────────
 
     public async Task<SubscriptionResult?> GetSubscriptionAsync(int companyId)
     {
-        if (!EnforcementEnabled)
+        var subs = await db.Subscriptions.Include(s => s.Plan).Include(s => s.PendingPlan)
+            .Where(s => s.CompanyId == companyId).ToListAsync();
+        var sub = SubscriptionSelector.PickCurrent(subs);
+        if (sub is null) return null;
+
+        var plan = settings.EnforcementEnabled ? ToPlanResult(sub.Plan) : UnlockedPlan(sub.Plan);
+
+        string? openInvoice = null;
+        if (sub.Status is SubscriptionStatus.PastDue or SubscriptionStatus.Unpaid || sub.PaymentMethod == BillingPaymentMethod.Pix)
         {
-            var devSub = await db.Subscriptions
-                .Include(s => s.Plan)
-                .Where(s => s.CompanyId == companyId)
-                .OrderByDescending(s => s.CreatedAt)
+            openInvoice = await db.BillingPayments
+                .Where(p => p.SubscriptionId == sub.Id && p.InvoiceUrl != null
+                            && (p.Status == BillingPaymentStatus.Overdue
+                                || (p.Status == BillingPaymentStatus.Pending && sub.PaymentMethod == BillingPaymentMethod.Pix)))
+                .OrderBy(p => p.DueDate)
+                .Select(p => p.InvoiceUrl)
                 .FirstOrDefaultAsync();
-
-            // Report an unlocked plan whether or not a subscription row exists.
-            return new SubscriptionResult(
-                devSub?.Id ?? 0,
-                "active",
-                UnlockedPlan(devSub?.Plan.Id ?? 0, devSub?.Plan.Name ?? "Development"),
-                devSub?.CurrentPeriodStart, devSub?.CurrentPeriodEnd,
-                devSub?.TrialEndsAt, null,
-                !string.IsNullOrEmpty(devSub?.StripeSubscriptionId));
         }
 
-        var sub = await db.Subscriptions
-            .Include(s => s.Plan)
-            .Where(s => s.CompanyId == companyId)
-            .OrderByDescending(s => s.CreatedAt)
-            .FirstOrDefaultAsync();
-
-        // Self-healing: if the company has a Stripe customer but no active subscription
-        // locally, check Stripe for active subscriptions and sync them.
-        //
-        // Gate on ANY active subscription, not only a Stripe-backed one. An admin-assigned
-        // (comped/manual) subscription has no StripeSubscriptionId; if we only checked for a
-        // Stripe-backed sub here, self-healing would re-activate a previously-canceled Stripe
-        // subscription behind the active admin assignment. That produced two active subs where
-        // GetSubscription and CreateCheckoutSession disagreed on the current plan — so clicking
-        // a plan you don't appear to be on threw "You are already on this plan". Treat an active
-        // admin assignment as authoritative and skip the Stripe re-sync.
-        var hasActiveSub = sub != null
-            && sub.Status is SubscriptionStatus.Active or SubscriptionStatus.Trialing;
-
-        if (!hasActiveSub)
+        var replacement = subs
+            .Where(s => s.Status == SubscriptionStatus.Incomplete && s.Id != sub.Id && s.CreatedAt >= sub.CreatedAt)
+            .OrderByDescending(s => s.CreatedAt).FirstOrDefault();
+        DateTime? replacementStarts = null;
+        if (replacement is not null)
         {
-            var company = await db.Companies.FindAsync(companyId);
-            if (company != null && !string.IsNullOrEmpty(company.StripeCustomerId))
-            {
-                sub = await SyncSubscriptionFromStripeAsync(companyId, company.StripeCustomerId) ?? sub;
-            }
+            replacementStarts = await db.BillingCheckouts
+                .Where(c => c.AsaasSubscriptionId == replacement.AsaasSubscriptionId && c.StartDate != null)
+                .Select(c => c.StartDate)
+                .FirstOrDefaultAsync() is { } startDate ? BillingMath.StartOfDayUtc(startDate) : null;
         }
-
-        if (sub == null) return null;
 
         return new SubscriptionResult(
             sub.Id,
-            sub.Status.ToString().ToLower(),
-            new SubscriptionPlanResult(sub.Plan.Id, sub.Plan.Name, sub.Plan.MaxAgents, sub.Plan.HasWhatsApp, sub.Plan.HasEscalationContacts, sub.Plan.HasGoogleCalendar, sub.Plan.HasCrm, sub.Plan.MaxConversationsPerMonth, sub.Plan.MaxMessagesPerMonth),
+            SubscriptionSelector.StatusName(settings.EnforcementEnabled ? sub.Status : SubscriptionStatus.Active),
+            plan,
             sub.CurrentPeriodStart, sub.CurrentPeriodEnd, sub.TrialEndsAt, sub.CanceledAt,
-            !string.IsNullOrEmpty(sub.StripeSubscriptionId));
+            sub.Cycle == BillingCycle.Yearly ? "yearly" : "monthly",
+            SubscriptionSelector.MethodName(sub.PaymentMethod),
+            sub.Price,
+            sub.CardBrand, sub.CardLast4,
+            sub.CancelAtPeriodEnd,
+            sub.PendingPlan is null ? null : ToPlanResult(sub.PendingPlan),
+            IsPaid: !string.IsNullOrEmpty(sub.AsaasSubscriptionId),
+            IsAdminAssigned: sub.AssignedByAdminId != null,
+            openInvoice,
+            sub.PastDueSince,
+            sub.PastDueSince?.AddDays(settings.GraceDays),
+            replacementStarts);
+    }
+
+    private static SubscriptionPlanResult ToPlanResult(Plan p) =>
+        new(p.Id, p.Name, p.MaxAgents, p.HasWhatsApp, p.HasEscalationContacts, p.HasGoogleCalendar, p.HasCrm,
+            p.MaxConversationsPerMonth, p.MaxMessagesPerMonth);
+
+    private static SubscriptionPlanResult UnlockedPlan(Plan p) =>
+        new(p.Id, p.Name, int.MaxValue, true, true, true, true, 0, 0);
+
+    public async Task<IReadOnlyList<BillingPaymentResult>> ListPaymentsAsync(int companyId) =>
+        await db.BillingPayments
+            .Where(p => p.CompanyId == companyId && p.Status != BillingPaymentStatus.Deleted)
+            .OrderByDescending(p => p.DueDate).ThenByDescending(p => p.Id)
+            .Take(50)
+            .Select(p => new BillingPaymentResult(
+                p.Id,
+                p.Kind.ToString().ToLower(),
+                p.Status.ToString().ToLower(),
+                p.Value, p.BillingType, p.DueDate, p.PaidAt, p.InvoiceUrl, p.NfseUrl, p.Description))
+            .ToListAsync();
+
+    public async Task<BillingCheckoutResult?> GetCheckoutAsync(int companyId, int checkoutId) =>
+        await db.BillingCheckouts
+            .Where(c => c.Id == checkoutId && c.CompanyId == companyId)
+            .Select(c => new BillingCheckoutResult(c.Id, c.Kind.ToString().ToLower(), c.Status.ToString().ToLower(), c.Url))
+            .FirstOrDefaultAsync();
+
+    // ── Billing profile (who pays: required by Asaas) ────────────────────────
+
+    public async Task<BillingProfileResult> GetProfileAsync(int companyId)
+    {
+        var c = await db.Companies.FindAsync(companyId) ?? throw new NotFoundException("Company not found.");
+        return ToProfile(c);
+    }
+
+    public async Task<BillingProfileResult> UpdateProfileAsync(int companyId, UpdateBillingProfileRequest request)
+    {
+        var c = await db.Companies.FindAsync(companyId) ?? throw new NotFoundException("Company not found.");
+        var digits = BillingMath.DigitsOnly(request.CpfCnpj);
+        if (!BillingMath.IsValidCpfCnpj(digits))
+            throw new DomainException("CPF ou CNPJ inválido. Confira os números.");
+        if (string.IsNullOrWhiteSpace(request.Name))
+            throw new DomainException("Informe o nome de quem paga.");
+
+        var individual = digits.Length == 11;
+        c.AccountType = individual ? AccountType.Individual : AccountType.Business;
+        c.CpfCnpj = digits;
+        if (individual) c.TradeName = request.Name.Trim();
+        else c.Name = string.IsNullOrWhiteSpace(c.Name) ? request.Name.Trim() : c.Name;
+        await db.SaveChangesAsync();
+
+        try { await ops.SyncCustomerAsync(c); }
+        catch (Exception ex) { logger.LogWarning(ex, "Could not update the Asaas customer of company {CompanyId}", companyId); }
+        return ToProfile(c);
+    }
+
+    private static BillingProfileResult ToProfile(Company c) => new(
+        c.AccountType == AccountType.Individual && !string.IsNullOrWhiteSpace(c.TradeName) ? c.TradeName! : c.Name,
+        c.AccountType == AccountType.Individual ? "individual" : "business",
+        c.CpfCnpj,
+        BillingMath.IsValidCpfCnpj(c.CpfCnpj));
+
+    // ── Choosing a plan ──────────────────────────────────────────────────────
+
+    private sealed record Choice(Plan Plan, BillingCycle Cycle, BillingPaymentMethod Method, decimal Price);
+
+    private void EnsureConfigured()
+    {
+        if (!asaas.IsConfigured)
+            throw new DomainException("Os pagamentos ainda não estão ativados. Fale com o suporte da Foji.");
+    }
+
+    private async Task<Choice> ResolveChoiceAsync(int companyId, ChoosePlanRequest request)
+    {
+        EnsureConfigured();
+        var plan = await db.Plans.FirstOrDefaultAsync(p =>
+                       p.Id == request.PlanId && p.IsActive && (p.IsPublic || p.CustomForCompanyId == companyId))
+                   ?? throw new NotFoundException("Plano não encontrado.");
+
+        var cycle = request.Cycle?.ToLowerInvariant() switch
+        {
+            "yearly" or "annual" => BillingCycle.Yearly,
+            _ => BillingCycle.Monthly,
+        };
+        var method = request.Method?.ToLowerInvariant() switch
+        {
+            "pix" => BillingPaymentMethod.Pix,
+            _ => BillingPaymentMethod.CreditCard,
+        };
+
+        if (method == BillingPaymentMethod.Pix && cycle != BillingCycle.Yearly)
+            throw new DomainException("Pix está disponível só no plano anual. No mensal a cobrança é no cartão.");
+        if (cycle == BillingCycle.Yearly && plan.YearlyPrice is null)
+            throw new DomainException("Este plano não tem opção anual.");
+
+        var price = BillingOperations.PriceFor(plan, cycle);
+        if (price <= 0) throw new DomainException("Este plano não tem preço configurado.");
+        return new Choice(plan, cycle, method, price);
+    }
+
+    private async Task<Subscription?> CurrentAsync(int companyId) =>
+        SubscriptionSelector.PickCurrent(await db.Subscriptions.Include(s => s.Plan)
+            .Where(s => s.CompanyId == companyId).ToListAsync());
+
+    /// <summary>Paid through Asaas and still running.</summary>
+    private static bool IsRunningPaid(Subscription? s) =>
+        s is not null && !string.IsNullOrEmpty(s.AsaasSubscriptionId)
+        && s.Status is SubscriptionStatus.Active or SubscriptionStatus.PastDue or SubscriptionStatus.Unpaid;
+
+    private static string KindFor(Subscription current, Choice choice)
+    {
+        if (current.CancelAtPeriodEnd || current.Cycle != choice.Cycle || current.PaymentMethod != choice.Method)
+            return "switch";
+        if (current.PlanId == choice.Plan.Id) return "same";
+        var oldPrice = current.Price ?? BillingOperations.PriceFor(current.Plan, current.Cycle);
+        return choice.Price > oldPrice ? "upgrade" : "downgrade";
+    }
+
+    public async Task<PlanChangePreview> PreviewAsync(int companyId, ChoosePlanRequest request)
+    {
+        var choice = await ResolveChoiceAsync(companyId, request);
+        var current = await CurrentAsync(companyId);
+        var cycleName = choice.Cycle == BillingCycle.Yearly ? "yearly" : "monthly";
+
+        if (!IsRunningPaid(current))
+            return new PlanChangePreview("new", choice.Price, choice.Price, cycleName, null);
+
+        var kind = KindFor(current!, choice);
+        return kind switch
+        {
+            "upgrade" => new PlanChangePreview(kind, UpgradeAmount(current!, choice), choice.Price, cycleName, null),
+            "downgrade" or "switch" => new PlanChangePreview(kind, 0, choice.Price, cycleName, NextStart(current!)),
+            _ => new PlanChangePreview(kind, 0, choice.Price, cycleName, null),
+        };
+    }
+
+    private decimal UpgradeAmount(Subscription current, Choice choice)
+    {
+        if (current.CurrentPeriodStart is not { } start || current.CurrentPeriodEnd is not { } end) return 0;
+        var oldPrice = current.Price ?? BillingOperations.PriceFor(current.Plan, current.Cycle);
+        var amount = BillingMath.ProratedUpgrade(oldPrice, choice.Price, start, end, DateTime.UtcNow);
+        return amount < settings.MinChargeValue ? 0 : amount;
+    }
+
+    /// <summary>When something that waits for the paid period to end would start.</summary>
+    private static DateTime? NextStart(Subscription current) =>
+        current.Status == SubscriptionStatus.Active && current.CurrentPeriodEnd > DateTime.UtcNow
+            ? current.CurrentPeriodEnd
+            : null;
+
+    public async Task<BillingActionResult> ChoosePlanAsync(int companyId, int userId, ChoosePlanRequest request, string? remoteIp)
+    {
+        var choice = await ResolveChoiceAsync(companyId, request);
+        var company = await db.Companies.FindAsync(companyId) ?? throw new NotFoundException("Company not found.");
+        var current = await CurrentAsync(companyId);
+
+        if (!IsRunningPaid(current))
+            return await StartSubscriptionAsync(company, userId, choice, BillingCheckoutKind.NewSubscription, null, null);
+
+        if (current!.Status is SubscriptionStatus.PastDue or SubscriptionStatus.Unpaid)
+            throw new DomainException("Há uma fatura em aberto. Pague a fatura ou troque o cartão antes de mudar de plano.");
+
+        switch (KindFor(current, choice))
+        {
+            case "same":
+                if (current.PendingPlanId is not null) return await CancelPendingChangeAsync(companyId);
+                throw new DomainException("Você já está neste plano.");
+
+            case "upgrade":
+                return await UpgradeAsync(company, current, choice, userId, remoteIp);
+
+            case "downgrade":
+            {
+                if (choice.Price == (current.Price ?? 0))
+                {
+                    // Same price, different plan: nothing to charge, swap now.
+                    await ops.ApplyUpgradeAsync(current, choice.Plan.Id);
+                    return new BillingActionResult("applied");
+                }
+                await asaas.UpdateSubscriptionValueAsync(current.AsaasSubscriptionId!, choice.Price,
+                    BillingOperations.Description(choice.Plan, choice.Cycle));
+                current.PendingPlanId = choice.Plan.Id;
+                await db.SaveChangesAsync();
+                return new BillingActionResult("scheduled", EffectiveAt: current.CurrentPeriodEnd);
+            }
+
+            default: // switch: other cycle or method, or coming back after canceling
+            {
+                var start = NextStart(current) is { } at ? DateOnly.FromDateTime(at.Add(BillingMath.BrasiliaOffset)) : (DateOnly?)null;
+                return await StartSubscriptionAsync(company, userId, choice, BillingCheckoutKind.Replacement, current, start);
+            }
+        }
     }
 
     /// <summary>
-    /// Check Stripe for active subscriptions for a customer and sync them locally.
-    /// Returns the synced subscription if found, null otherwise.
+    /// Sends the customer to pay for a new subscription.
+    ///  - Card: Asaas hosted checkout (RECURRENT), charged automatically every cycle.
+    ///  - Pix (yearly): an Asaas subscription whose first invoice we open for them.
+    /// <paramref name="startDate"/> null = first charge today.
     /// </summary>
-    private async Task<Core.Entities.Subscription?> SyncSubscriptionFromStripeAsync(int companyId, string stripeCustomerId)
+    private async Task<BillingActionResult> StartSubscriptionAsync(
+        Company company, int userId, Choice choice, BillingCheckoutKind kind, Subscription? replaces, DateOnly? startDate)
     {
-        try
-        {
-            StripeConfiguration.ApiKey = SecretKey;
-            var stripeSubs = await new SubscriptionService().ListAsync(new SubscriptionListOptions
-            {
-                Customer = stripeCustomerId,
-                Status = "all",
-                Limit = 5,
-            });
+        var customerId = await ops.EnsureCustomerAsync(company);
+        var today = BillingMath.TodayInBrasilia(DateTime.UtcNow);
+        var first = startDate is { } d && d > today ? d : today;
 
-            // Find the most recent active or trialing Stripe subscription
-            var activeSub = stripeSubs.Data
-                .Where(s => s.Status is "active" or "trialing")
-                .OrderByDescending(s => s.Created)
-                .FirstOrDefault();
-
-            if (activeSub == null) return null;
-
-            // Check if we already have this subscription locally
-            var existing = await db.Subscriptions
-                .Include(s => s.Plan)
-                .FirstOrDefaultAsync(s => s.StripeSubscriptionId == activeSub.Id);
-
-            if (existing != null)
-            {
-                // Update status in case it drifted
-                existing.Status = MapStatus(activeSub.Status);
-                existing.CurrentPeriodStart = activeSub.CurrentPeriodStart;
-                existing.CurrentPeriodEnd = activeSub.CurrentPeriodEnd;
-                existing.TrialEndsAt = activeSub.TrialEnd;
-                existing.CanceledAt = activeSub.CanceledAt;
-                await db.SaveChangesAsync();
-                return existing;
-            }
-
-            // We don't have this subscription locally — create it.
-            // Match the Stripe price to a local plan.
-            var priceId = activeSub.Items.Data.FirstOrDefault()?.Price?.Id;
-            var plan = !string.IsNullOrEmpty(priceId)
-                ? await db.Plans.FirstOrDefaultAsync(p => p.StripePriceId == priceId)
-                : null;
-
-            // Also check metadata for planId (set by our checkout flow)
-            if (plan == null && activeSub.Metadata.TryGetValue("planId", out var planIdStr)
-                && int.TryParse(planIdStr, out var planId))
-            {
-                plan = await db.Plans.FindAsync(planId);
-            }
-
-            if (plan == null) return null; // Can't map to a local plan
-
-            // Cancel any local-only trials
-            var localTrials = await db.Subscriptions
-                .Where(s => s.CompanyId == companyId
-                    && s.StripeSubscriptionId == null
-                    && (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
-                .ToListAsync();
-            foreach (var trial in localTrials)
-            {
-                trial.Status = SubscriptionStatus.Canceled;
-                trial.CanceledAt = DateTime.UtcNow;
-            }
-
-            var newSub = new Core.Entities.Subscription
-            {
-                CompanyId = companyId,
-                PlanId = plan.Id,
-                Status = MapStatus(activeSub.Status),
-                StripeSubscriptionId = activeSub.Id,
-                StripeCustomerId = stripeCustomerId,
-                CurrentPeriodStart = activeSub.CurrentPeriodStart,
-                CurrentPeriodEnd = activeSub.CurrentPeriodEnd,
-                TrialEndsAt = activeSub.TrialEnd,
-            };
-            db.Subscriptions.Add(newSub);
-            await db.SaveChangesAsync();
-
-            // Reload with Plan navigation property
-            await db.Entry(newSub).Reference(s => s.Plan).LoadAsync();
-            return newSub;
-        }
-        catch
-        {
-            // Don't let Stripe API errors break the billing page
-            return null;
-        }
-    }
-
-    public async Task<SubscriptionResult?> VerifyCheckoutSessionAsync(int companyId, string sessionId)
-    {
-        StripeConfiguration.ApiKey = SecretKey;
-
-        Session session;
-        try
-        {
-            session = await new SessionService().GetAsync(sessionId);
-        }
-        catch
-        {
-            return await GetSubscriptionAsync(companyId);
-        }
-
-        // Only process if the session belongs to this company
-        if (!session.Metadata.TryGetValue("companyId", out var cid) || cid != companyId.ToString())
-            return await GetSubscriptionAsync(companyId);
-
-        // If session is complete and has a subscription, ensure we have it locally
-        if (session.Status == "complete" && !string.IsNullOrEmpty(session.SubscriptionId))
-        {
-            var existing = await db.Subscriptions
-                .FirstOrDefaultAsync(s => s.StripeSubscriptionId == session.SubscriptionId);
-
-            if (existing == null)
-            {
-                // Webhook hasn't arrived yet — process the checkout now
-                await HandleCheckoutCompletedAsync(session);
-            }
-        }
-
-        return await GetSubscriptionAsync(companyId);
-    }
-
-    public async Task HandleWebhookAsync(string payload, string signature)
-    {
-        StripeConfiguration.ApiKey = SecretKey;
-        Event stripeEvent;
-
-        try
-        {
-            stripeEvent = EventUtility.ConstructEvent(payload, signature, WebhookSecret);
-        }
-        catch
-        {
-            throw new DomainException("Invalid webhook signature.");
-        }
-
-        switch (stripeEvent.Type)
-        {
-            case "checkout.session.completed":
-                await HandleCheckoutCompletedAsync((Session)stripeEvent.Data.Object);
-                break;
-            case "customer.subscription.updated":
-                await HandleSubscriptionUpdatedAsync((Stripe.Subscription)stripeEvent.Data.Object);
-                break;
-            case "customer.subscription.deleted":
-                await HandleSubscriptionDeletedAsync((Stripe.Subscription)stripeEvent.Data.Object);
-                break;
-            case "invoice.payment_failed":
-                await HandlePaymentFailedAsync((Invoice)stripeEvent.Data.Object);
-                break;
-        }
-    }
-
-    private async Task HandleCheckoutCompletedAsync(Session session)
-    {
-        if (!int.TryParse(session.Metadata.GetValueOrDefault("companyId"), out var companyId)) return;
-        if (!int.TryParse(session.Metadata.GetValueOrDefault("planId"), out var planId)) return;
-
-        var stripeSub = await new SubscriptionService().GetAsync(session.SubscriptionId);
-
-        // Cancel any other active subscriptions for this company (prevent duplicates)
-        var otherSubs = await db.Subscriptions
-            .Where(s => s.CompanyId == companyId &&
-                        s.StripeSubscriptionId != stripeSub.Id &&
-                        (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
+        // Don't leave a trail of open checkouts: only the newest one can be paid.
+        var stale = await db.BillingCheckouts
+            .Where(c => c.CompanyId == company.Id && c.Status == BillingCheckoutStatus.Pending
+                        && c.Kind != BillingCheckoutKind.Upgrade)
             .ToListAsync();
-
-        foreach (var old in otherSubs)
+        foreach (var old in stale)
         {
-            old.Status = SubscriptionStatus.Canceled;
-            old.CanceledAt = DateTime.UtcNow;
+            await CancelRemoteCheckoutAsync(old);
+            old.Status = BillingCheckoutStatus.Canceled;
         }
 
-        var existing = await db.Subscriptions
-            .FirstOrDefaultAsync(s => s.CompanyId == companyId && s.StripeSubscriptionId == stripeSub.Id);
-
-        if (existing == null)
+        var checkout = new BillingCheckout
         {
-            db.Subscriptions.Add(new Core.Entities.Subscription
+            CompanyId = company.Id,
+            Kind = kind,
+            PlanId = choice.Plan.Id,
+            Cycle = choice.Cycle,
+            Method = choice.Method,
+            Amount = choice.Price,
+            ReplacesSubscriptionId = replaces?.Id,
+            StartDate = first,
+            CreatedByUserId = userId,
+        };
+        db.BillingCheckouts.Add(checkout);
+        await db.SaveChangesAsync();
+
+        var reference = settings.CheckoutReference(checkout.Id);
+        var description = BillingOperations.Description(choice.Plan, choice.Cycle);
+
+        if (choice.Method == BillingPaymentMethod.CreditCard)
+        {
+            var created = await asaas.CreateCheckoutAsync(new AsaasCheckoutRequest
             {
-                CompanyId = companyId,
-                PlanId = planId,
-                Status = MapStatus(stripeSub.Status),
-                StripeSubscriptionId = stripeSub.Id,
-                StripeCustomerId = stripeSub.CustomerId,
-                CurrentPeriodStart = stripeSub.CurrentPeriodStart,
-                CurrentPeriodEnd = stripeSub.CurrentPeriodEnd,
-                TrialEndsAt = stripeSub.TrialEnd
+                Customer = customerId,
+                ExternalReference = reference,
+                Callback = Callback(checkout.Id),
+                Items =
+                [
+                    new AsaasCheckoutItem
+                    {
+                        Name = Truncate($"Foji AI {choice.Plan.Name}", 30),
+                        Description = Truncate(description, 150),
+                        Value = choice.Price,
+                    },
+                ],
+                Subscription = new AsaasCheckoutSubscription(
+                    BillingMath.ToAsaasCycle(choice.Cycle), first.ToString("yyyy-MM-dd")),
             });
+            checkout.AsaasCheckoutId = created.Id;
+            checkout.Url = created.Link ?? $"https://asaas.com/checkoutSession/show?id={created.Id}";
         }
         else
         {
-            existing.PlanId = planId;
-            existing.Status = MapStatus(stripeSub.Status);
-            existing.CurrentPeriodStart = stripeSub.CurrentPeriodStart;
-            existing.CurrentPeriodEnd = stripeSub.CurrentPeriodEnd;
+            var created = await asaas.CreateSubscriptionAsync(new AsaasSubscriptionRequest(
+                customerId, "PIX", choice.Price, first.ToString("yyyy-MM-dd"),
+                BillingMath.ToAsaasCycle(choice.Cycle), description, reference,
+                new AsaasCallback(SuccessUrl(checkout.Id), AutoRedirect: true)));
+
+            await ops.LinkAsync(checkout, created.Id);
+            checkout.Url = await FirstInvoiceUrlAsync(created.Id, first)
+                ?? throw new DomainException("A Asaas ainda não gerou a cobrança Pix. Tente de novo em alguns segundos.");
         }
 
         await db.SaveChangesAsync();
+        logger.LogInformation("Checkout {Id} ({Kind}, {Method}, {Cycle}) started for company {CompanyId}",
+            checkout.Id, kind, choice.Method, choice.Cycle, company.Id);
+        return new BillingActionResult("redirect", checkout.Url, CheckoutId: checkout.Id);
     }
 
-    private async Task HandleSubscriptionUpdatedAsync(Stripe.Subscription stripeSub)
+    /// <summary>
+    /// The first charge isn't in the create response: Asaas generates it right after.
+    /// Pick the one due on the first date (more than one can exist: charges are created
+    /// up to 40 days ahead).
+    /// </summary>
+    private async Task<string?> FirstInvoiceUrlAsync(string asaasSubscriptionId, DateOnly firstDue)
     {
-        var sub = await db.Subscriptions.FirstOrDefaultAsync(s => s.StripeSubscriptionId == stripeSub.Id);
-        if (sub == null) return;
-
-        sub.Status = MapStatus(stripeSub.Status);
-        sub.CurrentPeriodStart = stripeSub.CurrentPeriodStart;
-        sub.CurrentPeriodEnd = stripeSub.CurrentPeriodEnd;
-        sub.CanceledAt = stripeSub.CanceledAt;
-
-        // Sync PlanId if the price changed (plan switch via Stripe portal or API)
-        var currentPriceId = stripeSub.Items.Data.FirstOrDefault()?.Price?.Id;
-        if (!string.IsNullOrEmpty(currentPriceId))
+        for (var attempt = 0; attempt < 6; attempt++)
         {
-            var matchingPlan = await db.Plans.FirstOrDefaultAsync(p => p.StripePriceId == currentPriceId);
-            if (matchingPlan != null && matchingPlan.Id != sub.PlanId)
+            var payments = await asaas.ListSubscriptionPaymentsAsync(asaasSubscriptionId);
+            var first = payments
+                .Where(p => !string.IsNullOrEmpty(p.InvoiceUrl))
+                .OrderBy(p => p.DueDate == firstDue.ToString("yyyy-MM-dd") ? 0 : 1)
+                .ThenBy(p => p.DueDate)
+                .FirstOrDefault();
+            if (first is not null) return first.InvoiceUrl;
+            await Task.Delay(TimeSpan.FromMilliseconds(500 * (attempt + 1)));
+        }
+        return null;
+    }
+
+    private async Task<BillingActionResult> UpgradeAsync(
+        Company company, Subscription current, Choice choice, int userId, string? remoteIp)
+    {
+        var amount = UpgradeAmount(current, choice);
+        if (amount <= 0)
+        {
+            await ops.ApplyUpgradeAsync(current, choice.Plan.Id);
+            return new BillingActionResult("applied");
+        }
+
+        var customerId = await ops.EnsureCustomerAsync(company);
+        var checkout = new BillingCheckout
+        {
+            CompanyId = company.Id,
+            Kind = BillingCheckoutKind.Upgrade,
+            PlanId = choice.Plan.Id,
+            Cycle = choice.Cycle,
+            Method = choice.Method,
+            Amount = amount,
+            SubscriptionId = current.Id,
+            CreatedByUserId = userId,
+        };
+        db.BillingCheckouts.Add(checkout);
+        await db.SaveChangesAsync();
+
+        var reference = settings.CheckoutReference(checkout.Id);
+        var description = $"Foji AI · Diferença da troca para o plano {choice.Plan.Name}";
+        var today = BillingMath.TodayInBrasilia(DateTime.UtcNow).ToString("yyyy-MM-dd");
+
+        // With a saved card (and tokenization on the Asaas account) the difference is
+        // charged on the spot: no second checkout for the customer.
+        if (choice.Method == BillingPaymentMethod.CreditCard && asaas.TokenizationEnabled
+            && !string.IsNullOrEmpty(current.CardToken))
+        {
+            try
             {
-                sub.PlanId = matchingPlan.Id;
+                var charged = await asaas.CreatePaymentAsync(new AsaasPaymentRequest(
+                    customerId, "CREDIT_CARD", amount, today, description, reference,
+                    CreditCardToken: current.CardToken, RemoteIp: remoteIp));
+                await RecordOneOffAsync(company.Id, current.Id, BillingPaymentKind.Upgrade, charged, description);
+                checkout.AsaasPaymentId = charged.Id;
+
+                if (charged.Status is "CONFIRMED" or "RECEIVED")
+                {
+                    checkout.Status = BillingCheckoutStatus.Completed;
+                    checkout.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    await ops.ApplyUpgradeAsync(current, choice.Plan.Id);
+                    await ops.ScheduleOneOffNfseAsync(charged, description);
+                    return new BillingActionResult("applied", CheckoutId: checkout.Id);
+                }
+                checkout.Url = charged.InvoiceUrl;
+                await db.SaveChangesAsync();
+                if (!string.IsNullOrEmpty(charged.InvoiceUrl))
+                    return new BillingActionResult("redirect", charged.InvoiceUrl, CheckoutId: checkout.Id);
+            }
+            catch (AsaasException ex)
+            {
+                // Card refused this time: fall through to a payment page.
+                logger.LogInformation("Saved-card upgrade charge refused for company {CompanyId}: {Code}", company.Id, ex.Code);
             }
         }
 
-        // Also check metadata for planId (set by our SwitchPlanAsync)
-        if (stripeSub.Metadata.TryGetValue("planId", out var planIdStr) && int.TryParse(planIdStr, out var planId))
+        var payment = await asaas.CreatePaymentAsync(new AsaasPaymentRequest(
+            customerId, "UNDEFINED", amount, today, description, reference,
+            new AsaasCallback(SuccessUrl(checkout.Id), AutoRedirect: true)));
+        await RecordOneOffAsync(company.Id, current.Id, BillingPaymentKind.Upgrade, payment, description);
+        checkout.AsaasPaymentId = payment.Id;
+        checkout.Url = payment.InvoiceUrl;
+        await db.SaveChangesAsync();
+        return new BillingActionResult("redirect", payment.InvoiceUrl, CheckoutId: checkout.Id);
+    }
+
+    private async Task RecordOneOffAsync(int companyId, int? subscriptionId, BillingPaymentKind kind, AsaasPayment p, string description)
+    {
+        if (await db.BillingPayments.AnyAsync(x => x.AsaasPaymentId == p.Id)) return;
+        db.BillingPayments.Add(new BillingPayment
         {
-            if (planId != sub.PlanId)
-                sub.PlanId = planId;
+            CompanyId = companyId,
+            SubscriptionId = subscriptionId,
+            Kind = kind,
+            Status = BillingWebhookService.MapPaymentStatus(p.Status),
+            AsaasPaymentId = p.Id,
+            Value = p.Value,
+            BillingType = p.BillingType,
+            DueDate = DateOnly.TryParse(p.DueDate, out var due) ? due : BillingMath.TodayInBrasilia(DateTime.UtcNow),
+            InvoiceUrl = p.InvoiceUrl,
+            Description = description,
+            PaidAt = p.Status is "CONFIRMED" or "RECEIVED" ? DateTime.UtcNow : null,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    // ── Cancel / resume / pending changes / card ─────────────────────────────
+
+    public async Task<BillingActionResult> CancelAsync(int companyId)
+    {
+        EnsureConfigured();
+        var current = await CurrentAsync(companyId);
+        if (!IsRunningPaid(current)) throw new DomainException("Não há assinatura paga para cancelar.");
+
+        await asaas.DeleteSubscriptionAsync(current!.AsaasSubscriptionId!);
+        current.CanceledAt = DateTime.UtcNow;
+        current.PendingPlanId = null;
+
+        var paidAhead = current.Status == SubscriptionStatus.Active && current.CurrentPeriodEnd > DateTime.UtcNow;
+        if (paidAhead) current.CancelAtPeriodEnd = true;
+        else current.Status = SubscriptionStatus.Canceled;
+        await db.SaveChangesAsync();
+
+        var until = paidAhead ? current.CurrentPeriodEnd : null;
+        await ops.NotifyOwnerAsync(companyId, (owner, company) =>
+            email.SendSubscriptionCancelledAsync(owner.Email, owner.FirstName, company.Name, until));
+        return new BillingActionResult(paidAhead ? "scheduled" : "applied", EffectiveAt: until);
+    }
+
+    public async Task<BillingActionResult> ResumeAsync(int companyId, int userId)
+    {
+        EnsureConfigured();
+        var current = await CurrentAsync(companyId);
+        if (current is null || !current.CancelAtPeriodEnd || current.Status != SubscriptionStatus.Active)
+            throw new DomainException("Não há cancelamento para desfazer.");
+
+        var company = await db.Companies.FindAsync(companyId) ?? throw new NotFoundException("Company not found.");
+        var choice = new Choice(current.Plan, current.Cycle, current.PaymentMethod ?? BillingPaymentMethod.CreditCard,
+            current.Price ?? BillingOperations.PriceFor(current.Plan, current.Cycle));
+        var start = DateOnly.FromDateTime(current.CurrentPeriodEnd!.Value.Add(BillingMath.BrasiliaOffset));
+
+        // A saved card (with tokenization) resumes without leaving the app.
+        if (choice.Method == BillingPaymentMethod.CreditCard && asaas.TokenizationEnabled && !string.IsNullOrEmpty(current.CardToken))
+        {
+            var customerId = await ops.EnsureCustomerAsync(company);
+            var checkout = new BillingCheckout
+            {
+                CompanyId = companyId, Kind = BillingCheckoutKind.Replacement, PlanId = choice.Plan.Id,
+                Cycle = choice.Cycle, Method = choice.Method, Amount = choice.Price,
+                ReplacesSubscriptionId = current.Id, StartDate = start, CreatedByUserId = userId,
+            };
+            db.BillingCheckouts.Add(checkout);
+            await db.SaveChangesAsync();
+            try
+            {
+                var created = await asaas.CreateSubscriptionAsync(new AsaasSubscriptionRequest(
+                    customerId, "CREDIT_CARD", choice.Price, start.ToString("yyyy-MM-dd"),
+                    BillingMath.ToAsaasCycle(choice.Cycle), BillingOperations.Description(choice.Plan, choice.Cycle),
+                    settings.CheckoutReference(checkout.Id), CreditCardToken: current.CardToken));
+                var next = await ops.LinkAsync(checkout, created.Id);
+                // Nothing is due until the paid period ends: keep the card details and
+                // let the next charge activate it like any renewal.
+                next.CardToken = current.CardToken; next.CardBrand = current.CardBrand; next.CardLast4 = current.CardLast4;
+                await db.SaveChangesAsync();
+                return new BillingActionResult("applied", EffectiveAt: current.CurrentPeriodEnd);
+            }
+            catch (AsaasException ex)
+            {
+                logger.LogInformation("Saved-card resume failed for company {CompanyId}: {Code}", companyId, ex.Code);
+                checkout.Status = BillingCheckoutStatus.Canceled;
+                await db.SaveChangesAsync();
+            }
         }
 
+        return await StartSubscriptionAsync(company, userId, choice, BillingCheckoutKind.Replacement, current, start);
+    }
+
+    public async Task<BillingActionResult> CancelPendingChangeAsync(int companyId)
+    {
+        EnsureConfigured();
+        var current = await CurrentAsync(companyId);
+        if (current?.PendingPlanId is null) throw new DomainException("Não há troca de plano agendada.");
+
+        var price = current.Price ?? BillingOperations.PriceFor(current.Plan, current.Cycle);
+        await asaas.UpdateSubscriptionValueAsync(current.AsaasSubscriptionId!, price,
+            BillingOperations.Description(current.Plan, current.Cycle));
+        current.PendingPlanId = null;
         await db.SaveChangesAsync();
+        return new BillingActionResult("applied");
     }
 
-    private async Task HandleSubscriptionDeletedAsync(Stripe.Subscription stripeSub)
+    public async Task<BillingActionResult> UpdateCardAsync(int companyId, int userId)
     {
-        var sub = await db.Subscriptions
-            .Include(s => s.Company)
-            .FirstOrDefaultAsync(s => s.StripeSubscriptionId == stripeSub.Id);
-        if (sub == null) return;
-        sub.Status = SubscriptionStatus.Canceled;
-        sub.CanceledAt = DateTime.UtcNow;
-        await db.SaveChangesAsync();
+        EnsureConfigured();
+        var current = await CurrentAsync(companyId);
+        if (!IsRunningPaid(current) || current!.PaymentMethod != BillingPaymentMethod.CreditCard)
+            throw new DomainException("Não há assinatura no cartão para atualizar.");
 
-        // Notify the company owner
-        var owner = await GetCompanyOwnerAsync(sub.CompanyId);
-        if (owner != null)
-            await emailService.SendSubscriptionCancelledAsync(owner.Email, owner.FirstName, sub.Company.Name);
+        var company = await db.Companies.FindAsync(companyId) ?? throw new NotFoundException("Company not found.");
+        var choice = new Choice(current.Plan, current.Cycle, BillingPaymentMethod.CreditCard,
+            current.Price ?? BillingOperations.PriceFor(current.Plan, current.Cycle));
+
+        // Paid up: the new card is first charged when the current period ends.
+        // Overdue: the new card pays now and starts a fresh period (the overdue charge is dropped).
+        DateOnly? start = NextStart(current) is { } at && current.Status == SubscriptionStatus.Active
+            ? DateOnly.FromDateTime(at.Add(BillingMath.BrasiliaOffset))
+            : null;
+        return await StartSubscriptionAsync(company, userId, choice, BillingCheckoutKind.Replacement, current, start);
     }
 
-    private async Task HandlePaymentFailedAsync(Invoice invoice)
+    // ── Stopping (company deleted, admin assignment) ─────────────────────────
+
+    public async Task StopAsaasSubscriptionsAsync(int companyId, CancellationToken ct = default)
     {
-        var sub = await db.Subscriptions
-            .Include(s => s.Company)
-            .FirstOrDefaultAsync(s => s.StripeSubscriptionId == invoice.SubscriptionId);
-        if (sub == null) return;
-        sub.Status = SubscriptionStatus.PastDue;
-        await db.SaveChangesAsync();
-
-        // Notify the company owner
-        var owner = await GetCompanyOwnerAsync(sub.CompanyId);
-        if (owner != null)
-            await emailService.SendPaymentFailedAsync(owner.Email, owner.FirstName, sub.Company.Name);
-    }
-
-    private async Task<User?> GetCompanyOwnerAsync(int companyId)
-    {
-        return await db.UserCompanies
-            .Include(uc => uc.User)
-            .Where(uc => uc.CompanyId == companyId && uc.Role == CompanyRole.Owner && uc.IsActive)
-            .Select(uc => uc.User)
-            .FirstOrDefaultAsync();
-    }
-
-    private async Task<string> EnsureStripeCustomerAsync(Company company, int userId)
-    {
-        if (!string.IsNullOrEmpty(company.StripeCustomerId))
-            return company.StripeCustomerId;
-
-        var user = await db.Users.FindAsync(userId);
-        var customer = await new CustomerService().CreateAsync(new CustomerCreateOptions
+        var running = await db.Subscriptions
+            .Where(s => s.CompanyId == companyId && s.AsaasSubscriptionId != null && s.Status != SubscriptionStatus.Canceled)
+            .ToListAsync(ct);
+        foreach (var sub in running)
         {
-            Email = user!.Email,
-            Name = company.Name,
-            Metadata = new Dictionary<string, string> { ["companyId"] = company.Id.ToString() }
-        });
-
-        company.StripeCustomerId = customer.Id;
-        await db.SaveChangesAsync();
-        return customer.Id;
+            try
+            {
+                await asaas.DeleteSubscriptionAsync(sub.AsaasSubscriptionId!, ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Could not stop Asaas subscription {AsaasId} for company {CompanyId}",
+                    sub.AsaasSubscriptionId, companyId);
+                throw new DomainException("Não foi possível cancelar a cobrança na Asaas. Tente de novo.");
+            }
+        }
     }
 
-    // Fail closed. Stripe also emits "incomplete", "incomplete_expired" and
-    // "paused"; mapping unknown statuses to Active meant a checkout whose first
-    // payment never succeeded was written locally as Active and granted the full
-    // plan. Anything we don't explicitly recognise is treated as unpaid.
-    private static SubscriptionStatus MapStatus(string status) => status switch
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    private string SuccessUrl(int checkoutId) => $"{settings.ReturnBaseUrl}/billing?checkout={checkoutId}&status=success";
+
+    private AsaasCallback Callback(int checkoutId) => new(
+        SuccessUrl(checkoutId),
+        $"{settings.ReturnBaseUrl}/billing?checkout={checkoutId}&status=canceled",
+        $"{settings.ReturnBaseUrl}/billing?checkout={checkoutId}&status=expired");
+
+    private async Task CancelRemoteCheckoutAsync(BillingCheckout checkout)
     {
-        "active" => SubscriptionStatus.Active,
-        "trialing" => SubscriptionStatus.Trialing,
-        "past_due" => SubscriptionStatus.PastDue,
-        "canceled" or "cancelled" => SubscriptionStatus.Canceled,
-        "unpaid" or "incomplete" or "incomplete_expired" or "paused" => SubscriptionStatus.Unpaid,
-        _ => SubscriptionStatus.Unpaid
-    };
+        try
+        {
+            if (!string.IsNullOrEmpty(checkout.AsaasCheckoutId))
+                await asaas.CancelCheckoutAsync(checkout.AsaasCheckoutId);
+            else if (checkout.AsaasSubscriptionId is { } subId
+                     && await db.Subscriptions.FirstOrDefaultAsync(s => s.AsaasSubscriptionId == subId) is { Status: SubscriptionStatus.Incomplete } pending)
+            {
+                // An unpaid Pix subscription: drop it so its invoice can't be paid anymore.
+                await asaas.DeleteSubscriptionAsync(subId);
+                pending.Status = SubscriptionStatus.Canceled;
+                pending.CanceledAt = DateTime.UtcNow;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not cancel stale checkout {Id}", checkout.Id);
+        }
+    }
+
+    private static string Truncate(string text, int max) => text.Length <= max ? text : text[..max];
 }

@@ -5,7 +5,7 @@ COPY FojiApi.slnx .
 COPY src/FojiApi.Core/FojiApi.Core.csproj src/FojiApi.Core/
 COPY src/FojiApi.Infrastructure/FojiApi.Infrastructure.csproj src/FojiApi.Infrastructure/
 COPY src/FojiApi.Web.API/FojiApi.Web.API.csproj src/FojiApi.Web.API/
-RUN dotnet restore
+RUN dotnet restore src/FojiApi.Web.API/FojiApi.Web.API.csproj
 
 COPY src/ src/
 RUN dotnet publish src/FojiApi.Web.API/FojiApi.Web.API.csproj -c Release -o /out --no-restore

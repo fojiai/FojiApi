@@ -12,8 +12,14 @@ public interface IEmailService
 
     // Billing lifecycle emails
     Task SendTrialEndingAsync(string toEmail, string firstName, string companyName, int daysLeft);
-    Task SendPaymentFailedAsync(string toEmail, string firstName, string companyName);
-    Task SendSubscriptionCancelledAsync(string toEmail, string firstName, string companyName);
+    Task SendTrialEndedAsync(string toEmail, string firstName, string companyName);
+    /// <summary>A charge is overdue, or the card was refused. invoiceUrl lets them pay right away.</summary>
+    Task SendPaymentFailedAsync(string toEmail, string firstName, string companyName, string? invoiceUrl, bool cardRefused, DateTime? suspendsAt);
+    Task SendAccessSuspendedAsync(string toEmail, string firstName, string companyName, string? invoiceUrl);
+    /// <summary>accessUntil: when the paid period ends (null = access ended now).</summary>
+    Task SendSubscriptionCancelledAsync(string toEmail, string firstName, string companyName, DateTime? accessUntil);
+    /// <summary>A charge to pay through a link: Pix renewal, WhatsApp overage, upgrade difference.</summary>
+    Task SendBillingInvoiceAsync(string toEmail, string firstName, string subject, string intro, decimal value, DateOnly dueDate, string invoiceUrl);
 
     // Human handoff notification
     Task SendHandoffNotificationAsync(string toEmail, string agentName, string companyName, string sessionId, string? userMessage);

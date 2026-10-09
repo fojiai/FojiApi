@@ -115,7 +115,7 @@ public class TrialExpiryService(
             {
                 try
                 {
-                    await emailService.SendSubscriptionCancelledAsync(
+                    await emailService.SendTrialEndedAsync(
                         owner.Email, owner.FirstName, sub.Company.Name);
                 }
                 catch (Exception ex)

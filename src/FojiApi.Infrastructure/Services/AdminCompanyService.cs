@@ -1,3 +1,5 @@
+using FojiApi.Infrastructure.Billing;
+using FojiApi.Core.Exceptions;
 using FojiApi.Core.Entities;
 using FojiApi.Core.Enums;
 using FojiApi.Core.Interfaces.Services;
@@ -9,6 +11,7 @@ namespace FojiApi.Infrastructure.Services;
 
 public class AdminCompanyService(
     FojiDbContext db,
+    IBillingService billing,
     ILogger<AdminCompanyService> logger
 ) : IAdminCompanyService
 {
@@ -48,7 +51,7 @@ public class AdminCompanyService(
                 .FirstOrDefault(uc => uc.Role == CompanyRole.Owner)?.User;
 
             var activeSub = c.Subscriptions
-                .Where(s => s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing)
+                .Where(s => SubscriptionSelector.Serving.Contains(s.Status))
                 .OrderByDescending(s => s.CreatedAt)
                 .FirstOrDefault();
 
@@ -61,7 +64,7 @@ public class AdminCompanyService(
                 CpfCnpj: c.CpfCnpj,
                 OwnerEmail: owner?.Email ?? "—",
                 CurrentPlanName: activeSub?.Plan?.Name,
-                SubscriptionStatus: activeSub?.Status.ToString(),
+                SubscriptionStatus: activeSub is null ? null : SubscriptionSelector.StatusName(activeSub.Status),
                 HasActiveSubscription: activeSub != null,
                 CreatedAt: c.CreatedAt
             );
@@ -84,7 +87,7 @@ public class AdminCompanyService(
             ?? throw new KeyNotFoundException($"Company {companyId} not found");
 
         var activeSub = company.Subscriptions
-            .Where(s => s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing)
+            .Where(s => SubscriptionSelector.Serving.Contains(s.Status))
             .OrderByDescending(s => s.CreatedAt)
             .FirstOrDefault();
 
@@ -97,13 +100,13 @@ public class AdminCompanyService(
             AccountType: company.AccountType,
             CpfCnpj: company.CpfCnpj,
             AdminNotes: company.AdminNotes,
-            StripeCustomerId: company.StripeCustomerId,
+            AsaasCustomerId: company.AsaasCustomerId,
             MemberCount: company.UserCompanies.Count,
             AgentCount: company.Agents.Count,
             CurrentPlanId: activeSub?.PlanId,
             CurrentPlanName: activeSub?.Plan?.Name,
             CurrentPlanIsPublic: activeSub?.Plan?.IsPublic,
-            SubscriptionStatus: activeSub?.Status.ToString(),
+            SubscriptionStatus: activeSub is null ? null : SubscriptionSelector.StatusName(activeSub.Status),
             SubscriptionPeriodEnd: activeSub?.CurrentPeriodEnd,
             SubscriptionAssignedByAdminId: activeSub?.AssignedByAdminId,
             SubscriptionAdminNotes: activeSub?.AdminNotes,
@@ -129,17 +132,10 @@ public class AdminCompanyService(
             throw new InvalidOperationException(
                 $"Plan '{plan.Name}' is a custom plan for a different company.");
 
-        // Deactivate existing active subscriptions
-        var existing = await db.Subscriptions
-            .Where(s => s.CompanyId == companyId &&
-                        (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
-            .ToListAsync();
-
-        foreach (var sub in existing)
-        {
-            sub.Status = SubscriptionStatus.Canceled;
-            sub.CanceledAt = DateTime.UtcNow;
-        }
+        // The admin plan replaces whatever the company had, so stop charging at Asaas first
+        // (otherwise the card keeps being billed behind the manual arrangement).
+        await billing.StopAsaasSubscriptionsAsync(companyId);
+        await CancelOpenSubscriptionsAsync(companyId);
 
         // Create the new admin-assigned subscription
         var now = DateTime.UtcNow;
@@ -152,9 +148,8 @@ public class AdminCompanyService(
             CurrentPeriodEnd = request.PeriodEnd,
             AssignedByAdminId = adminUserId,
             AdminNotes = request.AdminNotes,
-            // No Stripe IDs — this is a manual assignment
-            StripeSubscriptionId = null,
-            StripeCustomerId = company.StripeCustomerId
+            PaymentMethod = BillingPaymentMethod.Manual,
+            Price = plan.MonthlyPrice,
         };
 
         db.Subscriptions.Add(newSub);
@@ -169,20 +164,12 @@ public class AdminCompanyService(
 
     public async Task RemovePlanAsync(int companyId, int adminUserId)
     {
-        var existing = await db.Subscriptions
-            .Where(s => s.CompanyId == companyId &&
-                        (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
-            .ToListAsync();
+        var any = await db.Subscriptions.AnyAsync(s => s.CompanyId == companyId && s.Status != SubscriptionStatus.Canceled);
+        if (!any)
+            throw new DomainException("Esta empresa não tem assinatura ativa para remover.");
 
-        if (!existing.Any())
-            throw new InvalidOperationException("Company has no active subscription to remove.");
-
-        foreach (var sub in existing)
-        {
-            sub.Status = SubscriptionStatus.Canceled;
-            sub.CanceledAt = DateTime.UtcNow;
-        }
-
+        await billing.StopAsaasSubscriptionsAsync(companyId);
+        await CancelOpenSubscriptionsAsync(companyId);
         await db.SaveChangesAsync();
 
         logger.LogInformation(
@@ -280,7 +267,7 @@ public class AdminCompanyService(
 
         // Companies that have never had a subscription or only have cancelled ones
         var companiesWithActiveSub = await db.Subscriptions
-            .Where(s => s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing)
+            .Where(s => SubscriptionSelector.Serving.Contains(s.Status))
             .Select(s => s.CompanyId)
             .Distinct()
             .CountAsync();
@@ -295,5 +282,19 @@ public class AdminCompanyService(
             trialingSubscriptions,
             companiesWithNoSubscription
         );
+    }
+
+    private async Task CancelOpenSubscriptionsAsync(int companyId)
+    {
+        var open = await db.Subscriptions
+            .Where(s => s.CompanyId == companyId && s.Status != SubscriptionStatus.Canceled)
+            .ToListAsync();
+        foreach (var sub in open)
+        {
+            sub.Status = SubscriptionStatus.Canceled;
+            sub.CanceledAt = DateTime.UtcNow;
+            sub.CancelAtPeriodEnd = false;
+            sub.PendingPlanId = null;
+        }
     }
 }

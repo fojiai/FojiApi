@@ -4,4 +4,7 @@
     <Project Path="src/FojiApi.Infrastructure/FojiApi.Infrastructure.csproj" />
     <Project Path="src/FojiApi.Web.API/FojiApi.Web.API.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FojiApi.Tests/FojiApi.Tests.csproj" />
+  </Folder>
 </Solution>

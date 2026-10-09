@@ -16,7 +16,8 @@ public class Company : BaseEntity
     public string Slug { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string? LogoUrl { get; set; }
-    public string? StripeCustomerId { get; set; }
+    /// <summary>The Asaas customer (cus_...) billed for this company.</summary>
+    public string? AsaasCustomerId { get; set; }
 
     /// <summary>Business (Pessoa Jurídica) or Individual (Pessoa Física).</summary>
     public AccountType AccountType { get; set; } = AccountType.Business;

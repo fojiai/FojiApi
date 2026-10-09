@@ -1,3 +1,4 @@
+using FojiApi.Infrastructure.Billing;
 using FojiApi.Core.Enums;
 using FojiApi.Core.Exceptions;
 using FojiApi.Core.Interfaces.Services;
@@ -105,7 +106,7 @@ public class PlanEnforcementService(FojiDbContext db, IConfiguration configurati
 
         var subscription = await db.Subscriptions
             .Where(s => s.CompanyId == companyId &&
-                        (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
+                        SubscriptionSelector.Serving.Contains(s.Status))
             .FirstOrDefaultAsync();
 
         if (subscription == null)
@@ -124,7 +125,7 @@ public class PlanEnforcementService(FojiDbContext db, IConfiguration configurati
         var subscription = await db.Subscriptions
             .Include(s => s.Plan)
             .Where(s => s.CompanyId == companyId &&
-                        (s.Status == SubscriptionStatus.Active || s.Status == SubscriptionStatus.Trialing))
+                        SubscriptionSelector.Serving.Contains(s.Status))
             .OrderByDescending(s => s.CreatedAt)
             .FirstOrDefaultAsync();
 

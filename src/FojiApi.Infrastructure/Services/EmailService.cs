@@ -17,7 +17,7 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
     {
         var verifyUrl = $"{_appBaseUrl}/verify-email?token={verificationToken}";
 
-        await SendAsync(toEmail, "Verifique seu e-mail — Foji AI", $"""
+        await SendAsync(toEmail, "Verifique seu e-mail · Foji AI", $"""
             <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
               <h2 style="color:#111;">Olá, {firstName}!</h2>
               <p>Obrigado por criar sua conta na <strong>Foji AI</strong>. Clique no botão abaixo para verificar seu e-mail:</p>
@@ -29,7 +29,7 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
               </p>
               <p style="color:#666;font-size:13px;">Este link expira em 24 horas. Se você não criou esta conta, ignore este e-mail.</p>
               <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
-              <p style="color:#999;font-size:12px;">Foji AI — Forje sua inteligência</p>
+              <p style="color:#999;font-size:12px;">Foji AI · Forje sua inteligência</p>
             </div>
             """);
     }
@@ -38,7 +38,7 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
     {
         var resetUrl = $"{_appBaseUrl}/reset-password?token={resetToken}";
 
-        await SendAsync(toEmail, "Redefinição de senha — Foji AI", $"""
+        await SendAsync(toEmail, "Redefinição de senha · Foji AI", $"""
             <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
               <h2 style="color:#111;">Olá, {firstName}!</h2>
               <p>Recebemos uma solicitação para redefinir a senha da sua conta Foji AI.</p>
@@ -50,7 +50,7 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
               </p>
               <p style="color:#666;font-size:13px;">Este link expira em 1 hora. Se você não solicitou esta redefinição, ignore este e-mail.</p>
               <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
-              <p style="color:#999;font-size:12px;">Foji AI — Forje sua inteligência</p>
+              <p style="color:#999;font-size:12px;">Foji AI · Forje sua inteligência</p>
             </div>
             """);
     }
@@ -59,7 +59,7 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
     {
         var acceptUrl = $"{_appBaseUrl}/accept-invitation?token={invitationToken}";
 
-        await SendAsync(toEmail, $"Você foi convidado para {companyName} — Foji AI", $"""
+        await SendAsync(toEmail, $"Você foi convidado para {companyName} · Foji AI", $"""
             <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
               <h2 style="color:#111;">Você foi convidado!</h2>
               <p><strong>{inviterName}</strong> convidou você para fazer parte da equipe <strong>{companyName}</strong> na Foji AI como <strong>{role}</strong>.</p>
@@ -71,7 +71,7 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
               </p>
               <p style="color:#666;font-size:13px;">Este convite expira em 7 dias.</p>
               <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
-              <p style="color:#999;font-size:12px;">Foji AI — Forje sua inteligência</p>
+              <p style="color:#999;font-size:12px;">Foji AI · Forje sua inteligência</p>
             </div>
             """);
     }
@@ -80,7 +80,7 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
     {
         var acceptUrl = $"{_appBaseUrl}/accept-invitation?type=admin&token={token}";
 
-        await SendAsync(toEmail, "Convite de Administrador do Sistema — Foji AI", $"""
+        await SendAsync(toEmail, "Convite de Administrador do Sistema · Foji AI", $"""
             <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
               <h2 style="color:#111;">Você foi convidado como Administrador</h2>
               <p><strong>{inviterName}</strong> convidou você para ser um <strong>administrador do sistema</strong> na plataforma Foji AI.</p>
@@ -93,77 +93,99 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
               </p>
               <p style="color:#666;font-size:13px;">Este convite expira em 7 dias.</p>
               <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
-              <p style="color:#999;font-size:12px;">Foji AI — Forje sua inteligência</p>
+              <p style="color:#999;font-size:12px;">Foji AI · Forje sua inteligência</p>
             </div>
             """);
     }
+
+    private static readonly System.Globalization.CultureInfo PtBr = new("pt-BR");
+
+    private static string Money(decimal value) => value.ToString("C", PtBr);
+
+    private static string Date(DateTime utc) => utc.AddHours(-3).ToString("dd/MM/yyyy", PtBr);
+
+    /// <summary>The shared look of every billing email.</summary>
+    private static string BillingLayout(string firstName, string body, string buttonLabel, string buttonUrl) => $"""
+        <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
+          <h2 style="color:#111;">Olá, {firstName}!</h2>
+          {body}
+          <p style="margin:32px 0;">
+            <a href="{buttonUrl}"
+               style="background:#FF2D2D;color:white;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">
+              {buttonLabel}
+            </a>
+          </p>
+          <p style="color:#666;font-size:13px;">Dúvidas? É só responder este e-mail.</p>
+          <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
+          <p style="color:#999;font-size:12px;">Foji AI · Forje sua inteligência</p>
+        </div>
+        """;
 
     public async Task SendTrialEndingAsync(string toEmail, string firstName, string companyName, int daysLeft)
     {
-        var billingUrl = $"{_appBaseUrl}/billing";
-
-        await SendAsync(toEmail, $"Seu trial termina em {daysLeft} dia{(daysLeft == 1 ? "" : "s")} — Foji AI", $"""
-            <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
-              <h2 style="color:#111;">Olá, {firstName}!</h2>
-              <p>O período de trial de <strong>{companyName}</strong> na Foji AI termina em <strong>{daysLeft} dia{(daysLeft == 1 ? "" : "s")}</strong>.</p>
-              <p>Para continuar usando a plataforma sem interrupção, assine um plano agora.</p>
-              <p style="margin:32px 0;">
-                <a href="{billingUrl}"
-                   style="background:#FF2D2D;color:white;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">
-                  Ver Planos
-                </a>
-              </p>
-              <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
-              <p style="color:#999;font-size:12px;">Foji AI — Forje sua inteligência</p>
-            </div>
-            """);
+        var days = $"{daysLeft} dia{(daysLeft == 1 ? "" : "s")}";
+        await SendAsync(toEmail, $"Seu teste grátis termina em {days} · Foji AI", BillingLayout(firstName, $"""
+            <p>O teste grátis de <strong>{companyName}</strong> na Foji AI termina em <strong>{days}</strong>.</p>
+            <p>Para o seu atendente continuar respondendo seus clientes sem parar, escolha um plano.</p>
+            """, "Ver planos", $"{_appBaseUrl}/billing"));
     }
 
-    public async Task SendPaymentFailedAsync(string toEmail, string firstName, string companyName)
+    public async Task SendTrialEndedAsync(string toEmail, string firstName, string companyName)
     {
-        var billingUrl = $"{_appBaseUrl}/billing";
-
-        await SendAsync(toEmail, "Problema com seu pagamento — Foji AI", $"""
-            <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
-              <h2 style="color:#111;">Olá, {firstName}!</h2>
-              <p>Houve um problema ao processar o pagamento da assinatura de <strong>{companyName}</strong>.</p>
-              <p>Para evitar a interrupção do serviço, por favor atualize suas informações de pagamento.</p>
-              <p style="margin:32px 0;">
-                <a href="{billingUrl}"
-                   style="background:#FF2D2D;color:white;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">
-                  Atualizar Pagamento
-                </a>
-              </p>
-              <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
-              <p style="color:#999;font-size:12px;">Foji AI — Forje sua inteligência</p>
-            </div>
-            """);
+        await SendAsync(toEmail, "Seu teste grátis terminou · Foji AI", BillingLayout(firstName, $"""
+            <p>O teste grátis de <strong>{companyName}</strong> na Foji AI terminou.</p>
+            <p>Tudo o que você configurou continua guardado. Escolha um plano e seu atendente volta a funcionar na hora.</p>
+            """, "Escolher um plano", $"{_appBaseUrl}/billing"));
     }
 
-    public async Task SendSubscriptionCancelledAsync(string toEmail, string firstName, string companyName)
+    public async Task SendPaymentFailedAsync(
+        string toEmail, string firstName, string companyName, string? invoiceUrl, bool cardRefused, DateTime? suspendsAt)
     {
-        var billingUrl = $"{_appBaseUrl}/billing";
+        var why = cardRefused
+            ? "O cartão cadastrado recusou a cobrança da assinatura"
+            : "Não recebemos o pagamento da assinatura";
+        var deadline = suspendsAt is { } d
+            ? $"<p>Para não pausar seu atendente, resolva até <strong>{Date(d)}</strong>.</p>"
+            : "";
+        await SendAsync(toEmail, "Não conseguimos cobrar sua assinatura · Foji AI", BillingLayout(firstName, $"""
+            <p>{why} de <strong>{companyName}</strong>.</p>
+            <p>Seu atendente continua funcionando por enquanto. Você pode pagar a fatura agora ou trocar o cartão na página de assinatura.</p>
+            {deadline}
+            """, invoiceUrl is null ? "Abrir minha assinatura" : "Pagar agora", invoiceUrl ?? $"{_appBaseUrl}/billing"));
+    }
 
-        await SendAsync(toEmail, "Assinatura cancelada — Foji AI", $"""
-            <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
-              <h2 style="color:#111;">Olá, {firstName}!</h2>
-              <p>A assinatura de <strong>{companyName}</strong> foi cancelada. Você ainda pode acessar a plataforma até o fim do período pago.</p>
-              <p>Se foi um engano ou mudou de ideia, reative sua assinatura a qualquer momento.</p>
-              <p style="margin:32px 0;">
-                <a href="{billingUrl}"
-                   style="background:#FF2D2D;color:white;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">
-                  Reativar Assinatura
-                </a>
-              </p>
-              <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
-              <p style="color:#999;font-size:12px;">Foji AI — Forje sua inteligência</p>
-            </div>
-            """);
+    public async Task SendAccessSuspendedAsync(string toEmail, string firstName, string companyName, string? invoiceUrl)
+    {
+        await SendAsync(toEmail, "Seu atendente foi pausado · Foji AI", BillingLayout(firstName, $"""
+            <p>Como a assinatura de <strong>{companyName}</strong> continua em aberto, pausamos seu atendente.</p>
+            <p>Nada foi apagado. Assim que o pagamento for feito, tudo volta a funcionar na hora.</p>
+            """, invoiceUrl is null ? "Abrir minha assinatura" : "Pagar e reativar", invoiceUrl ?? $"{_appBaseUrl}/billing"));
+    }
+
+    public async Task SendSubscriptionCancelledAsync(string toEmail, string firstName, string companyName, DateTime? accessUntil)
+    {
+        var access = accessUntil is { } until && until > DateTime.UtcNow
+            ? $"<p>Nada mais será cobrado. Você continua usando a Foji AI até <strong>{Date(until)}</strong>.</p>"
+            : "<p>Nada mais será cobrado. Tudo o que você configurou continua guardado se quiser voltar.</p>";
+        await SendAsync(toEmail, "Assinatura cancelada · Foji AI", BillingLayout(firstName, $"""
+            <p>A assinatura de <strong>{companyName}</strong> foi cancelada.</p>
+            {access}
+            <p>Mudou de ideia? Você pode voltar quando quiser.</p>
+            """, "Reativar assinatura", $"{_appBaseUrl}/billing"));
+    }
+
+    public async Task SendBillingInvoiceAsync(
+        string toEmail, string firstName, string subject, string intro, decimal value, DateOnly dueDate, string invoiceUrl)
+    {
+        await SendAsync(toEmail, $"{subject} · Foji AI", BillingLayout(firstName, $"""
+            <p>{intro}</p>
+            <p>Valor: <strong>{Money(value)}</strong><br/>Vencimento: <strong>{dueDate.ToString("dd/MM/yyyy", PtBr)}</strong></p>
+            """, "Pagar agora", invoiceUrl));
     }
 
     public async Task SendContactFormAsync(string toEmail, string fromName, string fromEmail, string subject, string category, string message)
     {
-        await SendAsync(toEmail, $"[Foji AI — {category}] {subject}", $"""
+        await SendAsync(toEmail, $"[Foji AI · {category}] {subject}", $"""
             <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
               <h2 style="color:#111;">Nova mensagem de contato</h2>
               <table style="width:100%;border-collapse:collapse;margin:16px 0;">
@@ -173,7 +195,7 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
               </table>
               <div style="background:#f9f9f9;border:1px solid #eee;border-radius:8px;padding:16px;margin:16px 0;white-space:pre-wrap;">{message}</div>
               <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
-              <p style="color:#999;font-size:12px;">Foji AI — Forje sua inteligência</p>
+              <p style="color:#999;font-size:12px;">Foji AI · Forje sua inteligência</p>
             </div>
             """);
     }
@@ -184,7 +206,7 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
             ? $"""<p style="color:#333;"><strong>Última mensagem do usuário:</strong></p><div style="background:#f9f9f9;border:1px solid #eee;border-radius:8px;padding:12px;margin:8px 0;font-style:italic;">{System.Net.WebUtility.HtmlEncode(userMessage)}</div>"""
             : "";
 
-        await SendAsync(toEmail, $"[Foji AI] Solicitação de atendimento humano — {agentName}", $"""
+        await SendAsync(toEmail, $"[Foji AI] Solicitação de atendimento humano · {agentName}", $"""
             <div style="font-family:sans-serif;max-width:520px;margin:0 auto;">
               <h2 style="color:#111;">Solicitação de Atendimento Humano</h2>
               <p>Um visitante solicitou falar com um humano através do agente <strong>{agentName}</strong> ({companyName}).</p>
@@ -192,7 +214,7 @@ public class EmailService(IResend resend, IConfiguration configuration) : IEmail
               <p style="color:#666;font-size:13px;">Sessão: <code>{sessionId}</code></p>
               <p style="color:#666;font-size:13px;">Acesse seu painel para ver o histórico completo da conversa.</p>
               <hr style="border:none;border-top:1px solid #eee;margin:24px 0;" />
-              <p style="color:#999;font-size:12px;">Foji AI — Forje sua inteligência</p>
+              <p style="color:#999;font-size:12px;">Foji AI · Forje sua inteligência</p>
             </div>
             """);
     }

@@ -8,9 +8,14 @@ public class Plan : BaseEntity
     public string? Description { get; set; }
     public decimal MonthlyPrice { get; set; }
 
-    /// <summary>ISO 4217 currency code. Defaults to USD for backwards compatibility.</summary>
-    public string Currency { get; set; } = "USD";
-    public string? StripePriceId { get; set; }
+    /// <summary>
+    /// Price for a whole year, paid at once (card or Pix). Null means the plan
+    /// has no yearly option. Usually about 10 months' worth, i.e. "2 months free".
+    /// </summary>
+    public decimal? YearlyPrice { get; set; }
+
+    /// <summary>ISO 4217 currency code. Asaas only charges in BRL.</summary>
+    public string Currency { get; set; } = "BRL";
     public int MaxAgents { get; set; }
 
     /// <summary>Maximum team members (including owner) per company. 0 = unlimited.</summary>

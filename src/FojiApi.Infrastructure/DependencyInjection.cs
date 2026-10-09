@@ -88,6 +88,16 @@ public static class DependencyInjection
         // Daily background job for trial expiry checks and reminder emails
         services.AddHostedService<TrialExpiryHostedService>();
 
+        // Billing (Asaas): no automatic retries on the client, a timed-out POST may have
+        // succeeded and Asaas would create a duplicate.
+        services.AddHttpClient<Asaas.AsaasClient>(c => c.Timeout = TimeSpan.FromSeconds(60));
+        services.AddScoped<Billing.BillingSettings>();
+        services.AddScoped<Billing.BillingOperations>();
+        services.AddScoped<Billing.BillingWebhookService>();
+        services.AddScoped<Billing.BillingMaintenanceService>();
+        services.AddHostedService<BackgroundJobs.BillingWebhookJob>();
+        services.AddHostedService<BackgroundJobs.BillingMaintenanceJob>();
+
         return services;
     }
 }
