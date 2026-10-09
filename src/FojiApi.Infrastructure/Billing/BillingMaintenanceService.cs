@@ -36,7 +36,16 @@ public class BillingMaintenanceService(
         await Step("give up", CancelLongUnpaidAsync, ct);
         await Step("stale checkouts", ExpireStaleAsync, ct);
         if (asaas.IsConfigured) await Step("whatsapp overage", BillOverageAsync, ct);
+        if (asaas.IsConfigured && DateTime.UtcNow.Hour == 6) await Step("keep the API key alive", KeepKeyAliveAsync, ct);
     }
+
+    /// <summary>
+    /// Asaas disables an API key after 3 months without calls and deletes it after 6.
+    /// Webhooks don't count, so a quiet stretch could silently break billing. One cheap
+    /// read a day keeps the key in use.
+    /// </summary>
+    private async Task KeepKeyAliveAsync(CancellationToken ct) =>
+        await asaas.FindCustomerByReferenceAsync(settings.CustomerReference(0), ct);
 
     private async Task Step(string name, Func<CancellationToken, Task> step, CancellationToken ct)
     {
